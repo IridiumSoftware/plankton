@@ -11,8 +11,17 @@ let package = Package(
         .executableTarget(
             name: "fluoddity-metal",
             path: "Sources/fluoddity-metal",
+            swiftSettings: [
+                // Swift 5 language mode for now — the app is main-thread-only
+                // (AppKit + Metal); adopt Swift 6 strict concurrency once the
+                // architecture settles.
+                .swiftLanguageMode(.v5)
+            ],
             linkerSettings: [
                 .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("AppKit"),
+                .linkedFramework("QuartzCore"),
                 .linkedFramework("Foundation"),
             ]
         )
