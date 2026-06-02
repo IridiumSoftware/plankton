@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.preferredFramesPerSecond = 60
 
-        renderer = Renderer(device: device)
+        renderer = Renderer(device: device, pixelFormat: mtkView.colorPixelFormat)
         mtkView.delegate = renderer
 
         window = NSWindow(contentRect: frame,

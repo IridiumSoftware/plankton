@@ -1,21 +1,36 @@
 import MetalKit
+import simd
 import Foundation
 
-// v0 render loop. Clears the view to a slow, breathing dark gradient so the
-// live (display-linked) loop is visibly running on screen. This proves the
-// second risky unknown — a windowed Metal loop from SwiftPM, no Xcode.
-//
-// Next: a particle buffer + a compute pass (sense → move → atomic-splat into a
-// flow-field texture), then the field update (decay/diffuse → advect → project).
+// Drives one frame: advance the simulation (decay → splat → sense/move), then
+// draw the trail field fullscreen. The compute encoders and the render encoder
+// share one command buffer; Metal serializes them, so the field is fully
+// updated before the fragment shader samples it.
 final class Renderer: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
-    private var frame: Int = 0
+    private let sim: Simulation
+    private let renderPipe: MTLRenderPipelineState
 
-    init(device: MTLDevice) {
+    init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         guard let q = device.makeCommandQueue() else {
             fatalError("could not create command queue")
         }
         self.queue = q
+
+        let library: MTLLibrary
+        do {
+            library = try device.makeLibrary(source: Shaders.source, options: nil)
+        } catch {
+            fatalError("MSL compile failed: \(error)")
+        }
+        self.sim = Simulation(device: device, library: library)
+
+        let desc = MTLRenderPipelineDescriptor()
+        desc.vertexFunction = library.makeFunction(name: "fs_vertex")
+        desc.fragmentFunction = library.makeFunction(name: "fs_fragment")
+        desc.colorAttachments[0].pixelFormat = pixelFormat
+        self.renderPipe = try! device.makeRenderPipelineState(descriptor: desc)
+
         super.init()
     }
 
@@ -26,21 +41,21 @@ final class Renderer: NSObject, MTKViewDelegate {
               let rpd = view.currentRenderPassDescriptor,
               let cmd = queue.makeCommandBuffer() else { return }
 
-        // Breathing dark background — a calm hue drift, so the loop is visibly alive.
-        let t = Float(frame) * 0.012
-        let r = (0.5 + 0.5 * sin(t))         * 0.18
-        let g = (0.5 + 0.5 * sin(t + 2.094)) * 0.20   // +120°
-        let b = (0.5 + 0.5 * sin(t + 4.188)) * 0.32   // +240°
-        rpd.colorAttachments[0].clearColor =
-            MTLClearColor(red: Double(r), green: Double(g), blue: Double(b), alpha: 1.0)
-        rpd.colorAttachments[0].loadAction = .clear
-        rpd.colorAttachments[0].storeAction = .store
+        // advance the simulation
+        sim.encode(into: cmd)
 
+        // draw the field
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.01, green: 0.01, blue: 0.03, alpha: 1)
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
-        // v0: clear only — nothing drawn yet. Particles next.
+        enc.setRenderPipelineState(renderPipe)
+        enc.setFragmentBuffer(sim.fieldBuffer, offset: 0, index: 0)
+        var dim = sim.dim
+        enc.setFragmentBytes(&dim, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
+
         cmd.present(drawable)
         cmd.commit()
-        frame += 1
     }
 }
