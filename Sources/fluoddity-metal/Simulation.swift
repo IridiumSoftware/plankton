@@ -9,34 +9,33 @@ struct Particle {
 }
 
 // Owns the grid fields + particle buffer and encodes one Stable-Fluids step:
-//   advect velocity → damp → splat (force + dye) → project (divergence,
-//   Jacobi pressure, subtract gradient) → advect dye → particles ride the flow.
-// Each pass is its own encoder; Metal's hazard tracking serializes them.
+//   advect velocity → damp → splat (force + dye) → project (divergence, Jacobi
+//   pressure, subtract gradient) → advect dye → agents sense/steer/ride.
+// Live tunables are read from `params` each frame. Each pass is its own
+// encoder; Metal's hazard tracking serializes them.
 final class Simulation {
     let particleCount: Int
     let dim: SIMD2<UInt32>
+    private let params: Params
 
-    // ping-ponged buffers are `var` so we can swap references
-    private(set) var vel: MTLBuffer            // interleaved x,y  (2N)
-    private var velTmp: MTLBuffer              // 2N
-    private var pressure: MTLBuffer            // N
-    private var pressureTmp: MTLBuffer         // N
-    private let divg: MTLBuffer                // N
-    private(set) var dye: MTLBuffer            // N
-    private var dyeTmp: MTLBuffer              // N
+    private(set) var vel: MTLBuffer
+    private var velTmp: MTLBuffer
+    private var pressure: MTLBuffer
+    private var pressureTmp: MTLBuffer
+    private let divg: MTLBuffer
+    private(set) var dye: MTLBuffer
+    private var dyeTmp: MTLBuffer
     let particleBuffer: MTLBuffer
 
     private let scalePipe, advectVelPipe, splatPipe, divPipe, jacobiPipe,
                 subGradPipe, advectDyePipe, movePipe: MTLComputePipelineState
 
-    // tunables
-    var velDamp: Float = 0.95
-    var forceGain: Float = 0.5
-    var dyeAmount: Float = 1.0
-    var jacobiIters: Int = 30
+    private let dyeAmount: Float = 1.0     // not live-tuned
+    var jacobiIters: Int = 30              // not live-tuned (changes encoder count)
 
-    init(device: MTLDevice, library: MTLLibrary,
+    init(device: MTLDevice, library: MTLLibrary, params: Params,
          particleCount: Int = 1 << 20, fieldDim: Int = 1024) {
+        self.params = params
         self.particleCount = particleCount
         self.dim = SIMD2<UInt32>(UInt32(fieldDim), UInt32(fieldDim))
         let n = fieldDim * fieldDim
@@ -52,8 +51,8 @@ final class Simulation {
         divg = zeroed(n)
         dye = zeroed(n); dyeTmp = zeroed(n)
 
-        // Particles: random position; velocity = a few overlaid Gaussian
-        // vortices so the opening flow is visibly swirling, not noise.
+        // Particles: random position; velocity = overlaid Gaussian vortices so
+        // the opening flow is visibly swirling.
         struct Vortex { var c: SIMD2<Float>; var s: Float; var r: Float }
         var rng = SystemRandomNumberGenerator()
         var vortices = [Vortex]()
@@ -99,7 +98,14 @@ final class Simulation {
 
     func encode(into cmd: MTLCommandBuffer) {
         let n = Int(dim.x) * Int(dim.y)
-        var dimv = dim, velDampv = velDamp, forceGainv = forceGain, dyeAmtv = dyeAmount
+        var dimv = dim
+        var velDampv = params.velDamp
+        var forceGainv = params.forceGain
+        var dyeAmtv = dyeAmount
+        var dyeDecayv = params.dyeDecay
+        var mp = MoveParamsGPU(swim: params.swim, sensorDist: params.sensorDist,
+                               sensorAngle: params.sensorAngle, turn: params.turn,
+                               fluidPull: params.fluidPull)
 
         // 1. advect velocity (vel → velTmp)
         field(cmd, advectVelPipe) { e in
@@ -112,7 +118,7 @@ final class Simulation {
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBytes(&velDampv, length: 4, index: 1)
         }
-        // 3. splat particle force + dye into velTmp / dye
+        // 3. splat force + dye
         particles(cmd, splatPipe) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBuffer(self.dye, offset: 0, index: 1)
@@ -135,7 +141,7 @@ final class Simulation {
                 e.setBuffer(self.divg, offset: 0, index: 2)
                 e.setBytes(&dimv, length: 8, index: 3)
             }
-            swap(&pressure, &pressureTmp)   // `pressure` now holds the latest
+            swap(&pressure, &pressureTmp)
         }
         // 6. subtract gradient → velTmp divergence-free
         field(cmd, subGradPipe) { e in
@@ -143,13 +149,14 @@ final class Simulation {
             e.setBuffer(self.pressure, offset: 0, index: 1)
             e.setBytes(&dimv, length: 8, index: 2)
         }
-        swap(&vel, &velTmp)                 // vel = new divergence-free field
+        swap(&vel, &velTmp)
         // 7. advect dye by the projected field (+ decay)
         field(cmd, advectDyePipe) { e in
             e.setBuffer(self.dye, offset: 0, index: 0)
             e.setBuffer(self.dyeTmp, offset: 0, index: 1)
             e.setBuffer(self.vel, offset: 0, index: 2)
             e.setBytes(&dimv, length: 8, index: 3)
+            e.setBytes(&dyeDecayv, length: 4, index: 4)
         }
         swap(&dye, &dyeTmp)
         // 8. agents sense the dye, steer, swim + get carried by the flow
@@ -158,6 +165,7 @@ final class Simulation {
             e.setBuffer(self.vel, offset: 0, index: 1)
             e.setBuffer(self.dye, offset: 0, index: 2)
             e.setBytes(&dimv, length: 8, index: 3)
+            e.setBytes(&mp, length: MemoryLayout<MoveParamsGPU>.stride, index: 4)
         }
     }
 
@@ -167,9 +175,8 @@ final class Simulation {
         guard let e = cmd.makeComputeCommandEncoder() else { return }
         e.setComputePipelineState(pipe)
         setup(e)
-        let tg = MTLSize(width: 16, height: 16, depth: 1)
         e.dispatchThreads(MTLSize(width: Int(dim.x), height: Int(dim.y), depth: 1),
-                          threadsPerThreadgroup: tg)
+                          threadsPerThreadgroup: MTLSize(width: 16, height: 16, depth: 1))
         e.endEncoding()
     }
     private func elementwise(_ cmd: MTLCommandBuffer, _ pipe: MTLComputePipelineState,

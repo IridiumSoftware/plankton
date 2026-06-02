@@ -23,7 +23,7 @@ func runSimTest() {
     print("MSL          : compiled OK")
 
     let dim = 256
-    let sim = Simulation(device: device, library: library,
+    let sim = Simulation(device: device, library: library, params: Params(),
                          particleCount: 1 << 18, fieldDim: dim)
     guard let queue = device.makeCommandQueue() else { fatalError("no command queue") }
 
