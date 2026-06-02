@@ -49,7 +49,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.01, green: 0.01, blue: 0.03, alpha: 1)
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
         enc.setRenderPipelineState(renderPipe)
-        enc.setFragmentBuffer(sim.fieldBuffer, offset: 0, index: 0)
+        enc.setFragmentBuffer(sim.dye, offset: 0, index: 0)
         var dim = sim.dim
         enc.setFragmentBytes(&dim, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)

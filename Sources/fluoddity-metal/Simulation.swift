@@ -8,105 +8,181 @@ struct Particle {
     var vel: SIMD2<Float>
 }
 
-// Owns the particle + field buffers and the three compute pipelines, and
-// encodes one simulation step (decay → splat → sense/move) into a command
-// buffer. Each pass is its own encoder so Metal serializes them (the field
-// must be decayed before splat, splatted before sensing reads it).
+// Owns the grid fields + particle buffer and encodes one Stable-Fluids step:
+//   advect velocity → damp → splat (force + dye) → project (divergence,
+//   Jacobi pressure, subtract gradient) → advect dye → particles ride the flow.
+// Each pass is its own encoder; Metal's hazard tracking serializes them.
 final class Simulation {
     let particleCount: Int
-    let dim: SIMD2<UInt32>            // field resolution
+    let dim: SIMD2<UInt32>
+
+    // ping-ponged buffers are `var` so we can swap references
+    private(set) var vel: MTLBuffer            // interleaved x,y  (2N)
+    private var velTmp: MTLBuffer              // 2N
+    private var pressure: MTLBuffer            // N
+    private var pressureTmp: MTLBuffer         // N
+    private let divg: MTLBuffer                // N
+    private(set) var dye: MTLBuffer            // N
+    private var dyeTmp: MTLBuffer              // N
     let particleBuffer: MTLBuffer
-    let fieldBuffer: MTLBuffer
 
-    private let decayPipe: MTLComputePipelineState
-    private let splatPipe: MTLComputePipelineState
-    private let movePipe:  MTLComputePipelineState
+    private let scalePipe, advectVelPipe, splatPipe, divPipe, jacobiPipe,
+                subGradPipe, advectDyePipe, movePipe: MTLComputePipelineState
 
-    // v0 tunables (CPU side)
-    private var decay: Float = 0.96
-    private var splatAmount: Float = 1.0
-    private var dt: Float = 1.0 / 60.0
+    // tunables
+    var velDamp: Float = 0.95
+    var forceGain: Float = 0.5
+    var dyeAmount: Float = 1.0
+    var jacobiIters: Int = 30
 
     init(device: MTLDevice, library: MTLLibrary,
          particleCount: Int = 1 << 20, fieldDim: Int = 1024) {
         self.particleCount = particleCount
         self.dim = SIMD2<UInt32>(UInt32(fieldDim), UInt32(fieldDim))
+        let n = fieldDim * fieldDim
 
-        // Particles: random position, random heading, modest speed.
-        var particles = [Particle]()
-        particles.reserveCapacity(particleCount)
+        func zeroed(_ floats: Int) -> MTLBuffer {
+            let b = device.makeBuffer(length: MemoryLayout<Float>.stride * floats,
+                                      options: .storageModeShared)!
+            memset(b.contents(), 0, b.length)
+            return b
+        }
+        vel = zeroed(2 * n); velTmp = zeroed(2 * n)
+        pressure = zeroed(n); pressureTmp = zeroed(n)
+        divg = zeroed(n)
+        dye = zeroed(n); dyeTmp = zeroed(n)
+
+        // Particles: random position; velocity = a few overlaid Gaussian
+        // vortices so the opening flow is visibly swirling, not noise.
+        struct Vortex { var c: SIMD2<Float>; var s: Float; var r: Float }
         var rng = SystemRandomNumberGenerator()
+        var vortices = [Vortex]()
+        for _ in 0..<6 {
+            vortices.append(Vortex(
+                c: SIMD2(Float.random(in: 0..<1, using: &rng), Float.random(in: 0..<1, using: &rng)),
+                s: Float.random(in: -1..<1, using: &rng),
+                r: Float.random(in: 0.12..<0.30, using: &rng)))
+        }
+        var particles = [Particle](); particles.reserveCapacity(particleCount)
         for _ in 0..<particleCount {
-            let px = Float.random(in: 0..<1, using: &rng)
-            let py = Float.random(in: 0..<1, using: &rng)
-            let ang = Float.random(in: 0..<(2 * .pi), using: &rng)
-            let spd = Float.random(in: 0.05..<0.15, using: &rng)
-            particles.append(Particle(pos: SIMD2(px, py),
-                                      vel: SIMD2(cos(ang) * spd, sin(ang) * spd)))
+            let pos = SIMD2(Float.random(in: 0..<1, using: &rng),
+                            Float.random(in: 0..<1, using: &rng))
+            var v = SIMD2<Float>(0, 0)
+            for vt in vortices {
+                let dvec = pos - vt.c
+                let fall = exp(-simd_length_squared(dvec) / (vt.r * vt.r))
+                v += vt.s * SIMD2(-dvec.y, dvec.x) * fall
+            }
+            v *= 0.12
+            particles.append(Particle(pos: pos, vel: v))
         }
         particleBuffer = device.makeBuffer(
             bytes: &particles,
             length: MemoryLayout<Particle>.stride * particleCount,
             options: .storageModeShared)!
 
-        let fieldCount = fieldDim * fieldDim
-        fieldBuffer = device.makeBuffer(
-            length: MemoryLayout<Float>.stride * fieldCount,
-            options: .storageModeShared)!
-        memset(fieldBuffer.contents(), 0, fieldBuffer.length)
-
         func pipe(_ name: String) -> MTLComputePipelineState {
             guard let fn = library.makeFunction(name: name) else {
-                fatalError("kernel `\(name)` not found in library")
+                fatalError("kernel `\(name)` not found")
             }
             return try! device.makeComputePipelineState(function: fn)
         }
-        decayPipe = pipe("decay_field")
-        splatPipe = pipe("splat_particles")
-        movePipe  = pipe("move_particles")
+        scalePipe     = pipe("scale_buffer")
+        advectVelPipe = pipe("advect_velocity")
+        splatPipe     = pipe("splat")
+        divPipe       = pipe("divergence")
+        jacobiPipe    = pipe("jacobi")
+        subGradPipe   = pipe("subtract_gradient")
+        advectDyePipe = pipe("advect_dye")
+        movePipe      = pipe("move_particles")
     }
 
     func encode(into cmd: MTLCommandBuffer) {
-        let fieldCount = Int(dim.x) * Int(dim.y)
-        var dimv = dim
-        var decayv = decay
-        var amountv = splatAmount
-        var dtv = dt
+        let n = Int(dim.x) * Int(dim.y)
+        var dimv = dim, velDampv = velDamp, forceGainv = forceGain, dyeAmtv = dyeAmount
 
-        // 1. decay the field in place
-        if let e = cmd.makeComputeCommandEncoder() {
-            e.setComputePipelineState(decayPipe)
-            e.setBuffer(fieldBuffer, offset: 0, index: 0)
-            e.setBytes(&decayv, length: MemoryLayout<Float>.stride, index: 1)
-            dispatch1D(e, decayPipe, fieldCount)
-            e.endEncoding()
+        // 1. advect velocity (vel → velTmp)
+        field(cmd, advectVelPipe) { e in
+            e.setBuffer(self.vel, offset: 0, index: 0)
+            e.setBuffer(self.velTmp, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
         }
-        // 2. splat particle trails (atomic)
-        if let e = cmd.makeComputeCommandEncoder() {
-            e.setComputePipelineState(splatPipe)
-            e.setBuffer(fieldBuffer, offset: 0, index: 0)
-            e.setBuffer(particleBuffer, offset: 0, index: 1)
-            e.setBytes(&dimv, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 2)
-            e.setBytes(&amountv, length: MemoryLayout<Float>.stride, index: 3)
-            dispatch1D(e, splatPipe, particleCount)
-            e.endEncoding()
+        // 2. damp velTmp (over 2N scalars)
+        elementwise(cmd, scalePipe, count: 2 * n) { e in
+            e.setBuffer(self.velTmp, offset: 0, index: 0)
+            e.setBytes(&velDampv, length: 4, index: 1)
         }
-        // 3. sense + move
-        if let e = cmd.makeComputeCommandEncoder() {
-            e.setComputePipelineState(movePipe)
-            e.setBuffer(particleBuffer, offset: 0, index: 0)
-            e.setBuffer(fieldBuffer, offset: 0, index: 1)
-            e.setBytes(&dimv, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 2)
-            e.setBytes(&dtv, length: MemoryLayout<Float>.stride, index: 3)
-            dispatch1D(e, movePipe, particleCount)
-            e.endEncoding()
+        // 3. splat particle force + dye into velTmp / dye
+        particles(cmd, splatPipe) { e in
+            e.setBuffer(self.velTmp, offset: 0, index: 0)
+            e.setBuffer(self.dye, offset: 0, index: 1)
+            e.setBuffer(self.particleBuffer, offset: 0, index: 2)
+            e.setBytes(&dimv, length: 8, index: 3)
+            e.setBytes(&forceGainv, length: 4, index: 4)
+            e.setBytes(&dyeAmtv, length: 4, index: 5)
+        }
+        // 4. divergence(velTmp → divg)
+        field(cmd, divPipe) { e in
+            e.setBuffer(self.velTmp, offset: 0, index: 0)
+            e.setBuffer(self.divg, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+        }
+        // 5. Jacobi pressure solve (warm-started; ping-pong)
+        for _ in 0..<jacobiIters {
+            field(cmd, jacobiPipe) { e in
+                e.setBuffer(self.pressure, offset: 0, index: 0)
+                e.setBuffer(self.pressureTmp, offset: 0, index: 1)
+                e.setBuffer(self.divg, offset: 0, index: 2)
+                e.setBytes(&dimv, length: 8, index: 3)
+            }
+            swap(&pressure, &pressureTmp)   // `pressure` now holds the latest
+        }
+        // 6. subtract gradient → velTmp divergence-free
+        field(cmd, subGradPipe) { e in
+            e.setBuffer(self.velTmp, offset: 0, index: 0)
+            e.setBuffer(self.pressure, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+        }
+        swap(&vel, &velTmp)                 // vel = new divergence-free field
+        // 7. advect dye by the projected field (+ decay)
+        field(cmd, advectDyePipe) { e in
+            e.setBuffer(self.dye, offset: 0, index: 0)
+            e.setBuffer(self.dyeTmp, offset: 0, index: 1)
+            e.setBuffer(self.vel, offset: 0, index: 2)
+            e.setBytes(&dimv, length: 8, index: 3)
+        }
+        swap(&dye, &dyeTmp)
+        // 8. particles ride the flow
+        particles(cmd, movePipe) { e in
+            e.setBuffer(self.particleBuffer, offset: 0, index: 0)
+            e.setBuffer(self.vel, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
         }
     }
 
-    private func dispatch1D(_ e: MTLComputeCommandEncoder,
-                            _ pipe: MTLComputePipelineState, _ count: Int) {
+    // ── encoder helpers ─────────────────────────────────────────────────
+    private func field(_ cmd: MTLCommandBuffer, _ pipe: MTLComputePipelineState,
+                       _ setup: (MTLComputeCommandEncoder) -> Void) {
+        guard let e = cmd.makeComputeCommandEncoder() else { return }
+        e.setComputePipelineState(pipe)
+        setup(e)
+        let tg = MTLSize(width: 16, height: 16, depth: 1)
+        e.dispatchThreads(MTLSize(width: Int(dim.x), height: Int(dim.y), depth: 1),
+                          threadsPerThreadgroup: tg)
+        e.endEncoding()
+    }
+    private func elementwise(_ cmd: MTLCommandBuffer, _ pipe: MTLComputePipelineState,
+                             count: Int, _ setup: (MTLComputeCommandEncoder) -> Void) {
+        guard let e = cmd.makeComputeCommandEncoder() else { return }
+        e.setComputePipelineState(pipe)
+        setup(e)
         let w = pipe.maxTotalThreadsPerThreadgroup
         e.dispatchThreads(MTLSize(width: count, height: 1, depth: 1),
                           threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        e.endEncoding()
+    }
+    private func particles(_ cmd: MTLCommandBuffer, _ pipe: MTLComputePipelineState,
+                           _ setup: (MTLComputeCommandEncoder) -> Void) {
+        elementwise(cmd, pipe, count: particleCount, setup)
     }
 }
