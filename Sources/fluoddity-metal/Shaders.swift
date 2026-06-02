@@ -1,15 +1,17 @@
 // All Metal Shading Language for the engine, compiled at runtime.
 //
-// FLUID STEP (2D, velocity–pressure / Stable-Fluids):
-//   particles splat their velocity (forcing) + dye into grid fields; the
-//   velocity field is advected along itself (semi-Lagrangian), damped, then
-//   PROJECTED divergence-free via a Jacobi pressure-Poisson solve (the discrete
-//   Hodge/Helmholtz projection — same operator as navier-stokes'
-//   spectral_2d_control.jl, opposite half: it keeps ∇⊥ψ, we subtract ∇p). Dye
-//   is advected by the projected field and rendered. Particles ride the flow.
+// MIDDLE-ROAD MODEL (2D): agents drive an incompressible fluid.
+//   - Particles SENSE the dye field ahead (Physarum/Sage-Jenson) and steer
+//     toward it; they swim at a fixed speed along that heading.
+//   - They DEPOSIT their steered velocity into the fluid (forcing) + dye.
+//   - The velocity field is advected, damped, then PROJECTED divergence-free
+//     (Jacobi pressure-Poisson = the discrete Hodge/Helmholtz projection, same
+//     operator as navier-stokes' spectral_2d_control.jl, opposite half).
+//   - Agents are also CARRIED by the projected fluid (two-way coupling): they
+//     drive it, it drifts them. Dye is advected by the flow and rendered, with
+//     the agents drawn as points on top.
 //
-// Velocity is stored interleaved (vel[2i]=x, vel[2i+1]=y) in cells/frame.
-// Domain is periodic (wrap). All field kernels dispatch over the 2D grid.
+// Velocity stored interleaved (vel[2i]=x, vel[2i+1]=y) in cells/frame; periodic.
 enum Shaders {
     static let source = """
     #include <metal_stdlib>
@@ -19,14 +21,26 @@ enum Shaders {
     struct Particle { float2 pos; float2 vel; };
 
     // ── Tunable constants (v0) ────────────────────────────────────────────
-    constant float VEL_DAMP  = 0.950;   // fluid energy bleed / frame
-    constant float DYE_DECAY = 0.985;   // dye fade / frame
-    constant float TONE_K    = 0.020;   // dye → brightness (↓ dimmer/contrast)
+    constant float VEL_DAMP     = 0.950;   // fluid energy bleed / frame
+    constant float DYE_DECAY    = 0.985;   // dye fade / frame
+    constant float TONE_K       = 0.020;   // dye → brightness (↓ dimmer/contrast)
+    constant float SWIM_SPEED   = 0.10;    // agent self-propulsion
+    constant float SENSOR_DIST  = 0.012;   // how far ahead agents sense the dye
+    constant float SENSOR_ANGLE = 0.40;    // radians, left/right sensor offset
+    constant float TURN         = 0.35;    // radians steered per step
+    constant float AGENT_DT     = 0.0167;  // agent step (≈1/60)
+    constant float FLUID_PULL   = 2.0;     // how strongly the fluid carries agents
+    constant float POINT_SIZE   = 1.5;     // agent dot size (px)
+    constant float POINT_ALPHA  = 0.10;    // agent dot brightness (additive)
 
     // ── helpers ───────────────────────────────────────────────────────────
     static inline int wrapi(int a, int n) { return ((a % n) + n) % n; }
     static inline uint cidx(int x, int y, uint2 d) {
         return uint(wrapi(y, int(d.y))) * d.x + uint(wrapi(x, int(d.x)));
+    }
+    static inline float2 rotate(float2 v, float a) {
+        float c = cos(a), s = sin(a);
+        return float2(v.x * c - v.y * s, v.x * s + v.y * c);
     }
     static inline float2 velAt(device const float *v, int x, int y, uint2 d) {
         uint i = cidx(x, y, d); return float2(v[2 * i], v[2 * i + 1]);
@@ -48,17 +62,17 @@ enum Shaders {
         return mix(a, b, ty);
     }
 
-    // ── per-element multiply (velocity damp over 2N, dye decay over N) ─────
-    kernel void scale_buffer(device float *buf    [[buffer(0)]],
-                             constant float &k     [[buffer(1)]],
-                             uint i                [[thread_position_in_grid]]) {
+    // ── per-element multiply (velocity damp over 2N) ──────────────────────
+    kernel void scale_buffer(device float *buf [[buffer(0)]],
+                             constant float &k  [[buffer(1)]],
+                             uint i             [[thread_position_in_grid]]) {
         buf[i] *= k;
     }
 
-    // ── 1. advect velocity (semi-Lagrangian backtrace) ────────────────────
-    kernel void advect_velocity(device const float *vin  [[buffer(0)]],
-                                device float *vout         [[buffer(1)]],
-                                constant uint2 &d          [[buffer(2)]],
+    // ── 1. advect velocity (semi-Lagrangian) ──────────────────────────────
+    kernel void advect_velocity(device const float *vin [[buffer(0)]],
+                                device float *vout        [[buffer(1)]],
+                                constant uint2 &d         [[buffer(2)]],
                                 uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y) return;
         uint i = gid.y * d.x + gid.x;
@@ -68,14 +82,14 @@ enum Shaders {
         vout[2 * i] = sv.x; vout[2 * i + 1] = sv.y;
     }
 
-    // ── 2. splat: particles deposit velocity (forcing) + dye (atomic) ─────
-    kernel void splat(device atomic_float *vel          [[buffer(0)]],
-                      device atomic_float *dye           [[buffer(1)]],
-                      device const Particle *parts       [[buffer(2)]],
-                      constant uint2 &d                  [[buffer(3)]],
-                      constant float &forceGain          [[buffer(4)]],
-                      constant float &dyeAmt             [[buffer(5)]],
-                      uint gid                           [[thread_position_in_grid]]) {
+    // ── 2. splat: agents deposit steered velocity (forcing) + dye ─────────
+    kernel void splat(device atomic_float *vel    [[buffer(0)]],
+                      device atomic_float *dye      [[buffer(1)]],
+                      device const Particle *parts  [[buffer(2)]],
+                      constant uint2 &d            [[buffer(3)]],
+                      constant float &forceGain    [[buffer(4)]],
+                      constant float &dyeAmt       [[buffer(5)]],
+                      uint gid                     [[thread_position_in_grid]]) {
         Particle p = parts[gid];
         float fx = p.pos.x * float(d.x) - 0.5;
         float fy = p.pos.y * float(d.y) - 0.5;
@@ -94,10 +108,10 @@ enum Shaders {
         }
     }
 
-    // ── 3. divergence of the velocity field ───────────────────────────────
-    kernel void divergence(device const float *v  [[buffer(0)]],
-                           device float *divg       [[buffer(1)]],
-                           constant uint2 &d        [[buffer(2)]],
+    // ── 3. divergence ─────────────────────────────────────────────────────
+    kernel void divergence(device const float *v [[buffer(0)]],
+                           device float *divg      [[buffer(1)]],
+                           constant uint2 &d       [[buffer(2)]],
                            uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y) return;
         int x = int(gid.x), y = int(gid.y);
@@ -106,11 +120,11 @@ enum Shaders {
         divg[gid.y * d.x + gid.x] = 0.5 * ((vr - vl) + (vt - vb));
     }
 
-    // ── 4. one Jacobi iteration of  ∇²p = div ─────────────────────────────
-    kernel void jacobi(device const float *pin   [[buffer(0)]],
-                       device float *pout          [[buffer(1)]],
-                       device const float *divg    [[buffer(2)]],
-                       constant uint2 &d           [[buffer(3)]],
+    // ── 4. Jacobi iteration of ∇²p = div ──────────────────────────────────
+    kernel void jacobi(device const float *pin [[buffer(0)]],
+                       device float *pout        [[buffer(1)]],
+                       device const float *divg  [[buffer(2)]],
+                       constant uint2 &d         [[buffer(3)]],
                        uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y) return;
         int x = int(gid.x), y = int(gid.y);
@@ -119,10 +133,10 @@ enum Shaders {
         pout[gid.y * d.x + gid.x] = (pl + pr + pb + pt - divg[gid.y * d.x + gid.x]) * 0.25;
     }
 
-    // ── 5. subtract pressure gradient → divergence-free velocity ──────────
-    kernel void subtract_gradient(device float *v       [[buffer(0)]],
-                                  device const float *p   [[buffer(1)]],
-                                  constant uint2 &d       [[buffer(2)]],
+    // ── 5. subtract pressure gradient → divergence-free ───────────────────
+    kernel void subtract_gradient(device float *v     [[buffer(0)]],
+                                  device const float *p [[buffer(1)]],
+                                  constant uint2 &d     [[buffer(2)]],
                                   uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y) return;
         int x = int(gid.x), y = int(gid.y);
@@ -146,15 +160,29 @@ enum Shaders {
         dout[i] = sampleScalar(din, pos, d) * DYE_DECAY;
     }
 
-    // ── 7. particles ride the flow ────────────────────────────────────────
+    // ── 7. agents: sense dye → steer → swim + carried by the fluid ────────
     kernel void move_particles(device Particle *parts   [[buffer(0)]],
                                device const float *v     [[buffer(1)]],
-                               constant uint2 &d         [[buffer(2)]],
+                               device const float *dye   [[buffer(2)]],
+                               constant uint2 &d         [[buffer(3)]],
                                uint gid [[thread_position_in_grid]]) {
         Particle p = parts[gid];
-        float2 cell = float2(p.pos.x * float(d.x), p.pos.y * float(d.y));
-        float2 fv = sampleVel(v, cell, d);          // cells/frame
-        p.pos = fract(p.pos + fv / float2(d));      // → normalized displacement
+        float2 dd = float2(d);
+        float spd = length(p.vel);
+        float2 dir = spd > 1e-6 ? p.vel / spd : float2(1.0, 0.0);
+
+        // sense the dye ahead (left / center / right) and steer toward it
+        float cF = sampleScalar(dye, (p.pos + dir * SENSOR_DIST) * dd, d);
+        float lF = sampleScalar(dye, (p.pos + rotate(dir,  SENSOR_ANGLE) * SENSOR_DIST) * dd, d);
+        float rF = sampleScalar(dye, (p.pos + rotate(dir, -SENSOR_ANGLE) * SENSOR_DIST) * dd, d);
+        float steer = (cF >= lF && cF >= rF) ? 0.0 : (lF > rF ? TURN : -TURN);
+        dir = rotate(dir, steer);
+        p.vel = dir * SWIM_SPEED;                 // steered swim velocity = the fluid forcing
+
+        // self-propulsion + advection by the projected fluid
+        float2 fv = sampleVel(v, p.pos * dd, d);  // cells/frame
+        float2 disp = dir * SWIM_SPEED * AGENT_DT + (fv / dd) * FLUID_PULL;
+        p.pos = fract(p.pos + disp);
         parts[gid] = p;
     }
 
@@ -167,15 +195,30 @@ enum Shaders {
         o.uv = uv;
         return o;
     }
-    fragment float4 fs_fragment(VSOut in                  [[stage_in]],
-                                device const float *dye    [[buffer(0)]],
-                                constant uint2 &d          [[buffer(1)]]) {
+    fragment float4 fs_fragment(VSOut in                 [[stage_in]],
+                                device const float *dye   [[buffer(0)]],
+                                constant uint2 &d         [[buffer(1)]]) {
         int x = clamp(int(in.uv.x * float(d.x)), 0, int(d.x) - 1);
         int y = clamp(int(in.uv.y * float(d.y)), 0, int(d.y) - 1);
         float v = dye[uint(y) * d.x + uint(x)];
         float a = 1.0 - exp(-v * TONE_K);
         float3 col = mix(float3(0.02, 0.03, 0.07), float3(0.20, 0.85, 0.95), a);
         return float4(col, 1.0);
+    }
+
+    // ── agent points (drawn additively over the dye) ──────────────────────
+    struct PointOut { float4 position [[position]]; float pointSize [[point_size]]; };
+    vertex PointOut point_vertex(uint vid                  [[vertex_id]],
+                                 device const Particle *parts [[buffer(0)]]) {
+        Particle p = parts[vid];
+        PointOut o;
+        o.position = float4(p.pos * 2.0 - 1.0, 0.0, 1.0);
+        o.pointSize = POINT_SIZE;
+        return o;
+    }
+    fragment float4 point_fragment(float2 pc [[point_coord]]) {
+        if (length(pc - 0.5) > 0.5) discard_fragment();
+        return float4(float3(0.7, 0.95, 1.0) * POINT_ALPHA, POINT_ALPHA);
     }
     """
 }

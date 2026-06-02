@@ -152,11 +152,12 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 3)
         }
         swap(&dye, &dyeTmp)
-        // 8. particles ride the flow
+        // 8. agents sense the dye, steer, swim + get carried by the flow
         particles(cmd, movePipe) { e in
             e.setBuffer(self.particleBuffer, offset: 0, index: 0)
             e.setBuffer(self.vel, offset: 0, index: 1)
-            e.setBytes(&dimv, length: 8, index: 2)
+            e.setBuffer(self.dye, offset: 0, index: 2)
+            e.setBytes(&dimv, length: 8, index: 3)
         }
     }
 
