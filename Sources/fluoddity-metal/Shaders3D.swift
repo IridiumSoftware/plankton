@@ -1,32 +1,111 @@
-// 3D engine shaders (Stage 1): particles advected by an analytic ABC flow
-// (Arnold–Beltrami–Childress — a divergence-free 3D flow with chaotic
-// streamlines), rendered as an additive point cloud through an orbital camera.
-// Stage 2 replaces the analytic flow with a real 3D fluid grid + agent physics.
+// 3D engine shaders.
+// Stage 2a: a real 3D incompressible fluid on a 128³ grid — agents splat their
+// velocity (forcing), the field is advected (semi-Lagrangian) + damped, then
+// PROJECTED divergence-free via a 6-neighbour Jacobi pressure solve (the discrete
+// Hodge projection in 3D). Agents ride the projected field. Rendered as an
+// additive point cloud through the orbital camera.
+// Stage 2b adds the Monte-Carlo tangent-plane Fourier brain.
+//
+// Velocity stored interleaved (vel[3i + {0,1,2}]) in cells/frame; periodic cube.
 enum Shaders3D {
     static let source = """
     #include <metal_stdlib>
+    #include <metal_atomic>
     using namespace metal;
 
     struct Particle3D { float3 pos; float3 vel; };
 
-    constant float ABC_A = 1.0, ABC_B = 0.7, ABC_C = 0.43;
-    constant float FLOW_SPEED = 0.06;
-    constant float DT3 = 0.016;
-
-    static inline float3 abcFlow(float3 p) {
-        float x = p.x * 6.2831853, y = p.y * 6.2831853, z = p.z * 6.2831853;
-        return float3(ABC_A * sin(z) + ABC_C * cos(y),
-                      ABC_B * sin(x) + ABC_A * cos(z),
-                      ABC_C * sin(y) + ABC_B * cos(x));
+    static inline int wrp(int a, int n) { return ((a % n) + n) % n; }
+    static inline uint idx3(int x, int y, int z, uint3 d) {
+        return (uint(wrp(z, int(d.z))) * d.y + uint(wrp(y, int(d.y)))) * d.x + uint(wrp(x, int(d.x)));
+    }
+    static inline float3 vat(device const float *v, int x, int y, int z, uint3 d) {
+        uint i = idx3(x, y, z, d); return float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+    }
+    static inline float3 sampleVel3(device const float *v, float3 p, uint3 d) {
+        float3 fl = floor(p); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z);
+        float3 t = p - fl;
+        float3 c00 = mix(vat(v, x0, y0, z0, d),     vat(v, x0 + 1, y0, z0, d),     t.x);
+        float3 c10 = mix(vat(v, x0, y0 + 1, z0, d), vat(v, x0 + 1, y0 + 1, z0, d), t.x);
+        float3 c01 = mix(vat(v, x0, y0, z0 + 1, d), vat(v, x0 + 1, y0, z0 + 1, d), t.x);
+        float3 c11 = mix(vat(v, x0, y0 + 1, z0 + 1, d), vat(v, x0 + 1, y0 + 1, z0 + 1, d), t.x);
+        return mix(mix(c00, c10, t.y), mix(c01, c11, t.y), t.z);
     }
 
-    // advect each particle along the ABC flow; wrap in the unit cube (periodic)
-    kernel void move3d(device Particle3D *parts [[buffer(0)]],
+    kernel void scale3d(device float *buf [[buffer(0)]], constant float &k [[buffer(1)]],
+                        uint i [[thread_position_in_grid]]) { buf[i] *= k; }
+
+    // 1. advect velocity (semi-Lagrangian backtrace)
+    kernel void advect3d(device const float *vin [[buffer(0)]], device float *vout [[buffer(1)]],
+                         constant uint3 &d [[buffer(2)]], uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        float3 here = float3(vin[3 * i], vin[3 * i + 1], vin[3 * i + 2]);
+        float3 sv = sampleVel3(vin, float3(gid) + 0.5 - here, d);
+        vout[3 * i] = sv.x; vout[3 * i + 1] = sv.y; vout[3 * i + 2] = sv.z;
+    }
+
+    // 2. splat agent velocities (trilinear, atomic)
+    kernel void splat3d(device atomic_float *vel [[buffer(0)]], device const Particle3D *parts [[buffer(1)]],
+                        constant uint3 &d [[buffer(2)]], constant float &gain [[buffer(3)]],
+                        uint gid [[thread_position_in_grid]]) {
+        Particle3D p = parts[gid];
+        float3 cell = p.pos * float3(d) - 0.5;
+        float3 fl = floor(cell); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z);
+        float3 t = cell - fl;
+        float3 f = p.vel * gain;
+        for (int k = 0; k < 2; k++) for (int j = 0; j < 2; j++) for (int ii = 0; ii < 2; ii++) {
+            int xi = wrp(x0 + ii, int(d.x)), yi = wrp(y0 + j, int(d.y)), zi = wrp(z0 + k, int(d.z));
+            float w = (ii == 0 ? 1 - t.x : t.x) * (j == 0 ? 1 - t.y : t.y) * (k == 0 ? 1 - t.z : t.z);
+            uint c = (uint(zi) * d.y + uint(yi)) * d.x + uint(xi);
+            atomic_fetch_add_explicit(&vel[3 * c],     f.x * w, memory_order_relaxed);
+            atomic_fetch_add_explicit(&vel[3 * c + 1], f.y * w, memory_order_relaxed);
+            atomic_fetch_add_explicit(&vel[3 * c + 2], f.z * w, memory_order_relaxed);
+        }
+    }
+
+    // 3. divergence
+    kernel void divergence3d(device const float *v [[buffer(0)]], device float *divg [[buffer(1)]],
+                             constant uint3 &d [[buffer(2)]], uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        int x = int(gid.x), y = int(gid.y), z = int(gid.z);
+        float dx = vat(v, x + 1, y, z, d).x - vat(v, x - 1, y, z, d).x;
+        float dy = vat(v, x, y + 1, z, d).y - vat(v, x, y - 1, z, d).y;
+        float dz = vat(v, x, y, z + 1, d).z - vat(v, x, y, z - 1, d).z;
+        divg[(gid.z * d.y + gid.y) * d.x + gid.x] = 0.5 * (dx + dy + dz);
+    }
+
+    // 4. Jacobi iteration of ∇²p = div (6-neighbour)
+    kernel void jacobi3d(device const float *pin [[buffer(0)]], device float *pout [[buffer(1)]],
+                         device const float *divg [[buffer(2)]], constant uint3 &d [[buffer(3)]],
+                         uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        int x = int(gid.x), y = int(gid.y), z = int(gid.z);
+        float s = pin[idx3(x - 1, y, z, d)] + pin[idx3(x + 1, y, z, d)]
+                + pin[idx3(x, y - 1, z, d)] + pin[idx3(x, y + 1, z, d)]
+                + pin[idx3(x, y, z - 1, d)] + pin[idx3(x, y, z + 1, d)];
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        pout[i] = (s - divg[i]) / 6.0;
+    }
+
+    // 5. subtract pressure gradient → divergence-free
+    kernel void subgrad3d(device float *v [[buffer(0)]], device const float *p [[buffer(1)]],
+                          constant uint3 &d [[buffer(2)]], uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        int x = int(gid.x), y = int(gid.y), z = int(gid.z);
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        v[3 * i]     -= 0.5 * (p[idx3(x + 1, y, z, d)] - p[idx3(x - 1, y, z, d)]);
+        v[3 * i + 1] -= 0.5 * (p[idx3(x, y + 1, z, d)] - p[idx3(x, y - 1, z, d)]);
+        v[3 * i + 2] -= 0.5 * (p[idx3(x, y, z + 1, d)] - p[idx3(x, y, z - 1, d)]);
+    }
+
+    // 6. agents ride the projected field (Stage 2a: pure tracers; brain in 2b)
+    kernel void move3d(device Particle3D *parts [[buffer(0)]], device const float *v [[buffer(1)]],
+                       constant uint3 &d [[buffer(2)]], constant float &fluidPull [[buffer(3)]],
                        uint gid [[thread_position_in_grid]]) {
         Particle3D p = parts[gid];
-        float3 v = abcFlow(p.pos) * FLOW_SPEED;
-        p.vel = v;
-        p.pos = fract(p.pos + v * DT3);
+        float3 fv = sampleVel3(v, p.pos * float3(d), d);   // cells/frame
+        p.pos = fract(p.pos + (fv / float3(d)) * fluidPull);
         parts[gid] = p;
     }
 
@@ -45,7 +124,7 @@ enum Shaders3D {
         float r = length(pc - 0.5) * 2.0;
         if (r > 1.0) discard_fragment();
         float a = (1.0 - r * r) * 0.12;
-        float t = clamp(in.speed * 8.0, 0.0, 1.0);     // slow → blue, fast → warm
+        float t = clamp(in.speed * 4.0, 0.0, 1.0);
         float3 col = mix(float3(0.2, 0.5, 1.0), float3(1.0, 0.7, 0.3), t);
         return float4(col * a, a);
     }
