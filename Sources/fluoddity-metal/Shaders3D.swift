@@ -235,7 +235,7 @@ enum Shaders3D {
             float3 pos = ro + (tn + (float(i) + 0.5) * dt) * rd;
             float dens = sampleScalar3(dye, pos * float3(d), d) * densityScale;
             if (dens > 0.002) {
-                float a = 1.0 - exp(-dens * dt * 25.0);
+                float a = 1.0 - exp(-dens * dt * 15.0);
                 float3 emit = mix(float3(0.1, 0.4, 0.9), float3(1.0, 0.6, 0.2), clamp(dens, 0.0, 1.0));
                 acc += trans * a * emit;
                 trans *= 1.0 - a;

@@ -8,7 +8,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     private let sim: Sim3D
     private let volumePipe: MTLRenderPipelineState
     let camera = Camera3D()
-    var densityScale: Float = 0.05
+    var densityScale: Float = 0.006
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         queue = device.makeCommandQueue()!
@@ -27,7 +27,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
 
     func reroll() { sim.rerollRule() }
     func adjustDensity(_ f: Float) {
-        densityScale = max(0.005, min(2.0, densityScale * f))
+        densityScale = max(0.001, min(2.0, densityScale * f))
         print(String(format: "densityScale = %.3f", densityScale))
     }
 
