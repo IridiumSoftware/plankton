@@ -25,3 +25,27 @@ struct MoveParamsGPU {
     var turn: Float
     var fluidPull: Float
 }
+
+// One tunable knob: name, where it lives in Params, range, keyboard step.
+// Shared source of truth for both the slider panel and keyboard tuning.
+struct Knob {
+    let name: String
+    let kp: ReferenceWritableKeyPath<Params, Float>
+    let lo: Float
+    let hi: Float
+    let step: Float
+}
+
+let engineKnobs: [Knob] = [
+    Knob(name: "toneK",       kp: \.toneK,       lo: 0.001, hi: 0.20,  step: 0.002),
+    Knob(name: "swim",        kp: \.swim,        lo: 0.0,   hi: 0.50,  step: 0.01),
+    Knob(name: "sensorDist",  kp: \.sensorDist,  lo: 0.001, hi: 0.10,  step: 0.002),
+    Knob(name: "sensorAngle", kp: \.sensorAngle, lo: 0.0,   hi: 1.50,  step: 0.05),
+    Knob(name: "turn",        kp: \.turn,        lo: 0.0,   hi: 1.50,  step: 0.05),
+    Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25),
+    Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005),
+    Knob(name: "dyeDecay",    kp: \.dyeDecay,    lo: 0.50,  hi: 0.999, step: 0.005),
+    Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05),
+    Knob(name: "pointAlpha",  kp: \.pointAlpha,  lo: 0.0,   hi: 1.0,   step: 0.02),
+    Knob(name: "satGain",     kp: \.satGain,     lo: 0.0,   hi: 3.0,   step: 0.05),
+]

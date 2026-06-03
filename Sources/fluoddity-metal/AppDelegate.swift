@@ -1,12 +1,14 @@
 import AppKit
 import MetalKit
 
-// Owns the window, the Metal view, and the live-tuning wiring. Instantiated at
-// top level in main.swift and held for the program's lifetime.
+// Owns the window, the Metal view, the on-screen slider panel, and the
+// (secondary) keyboard tuning. Instantiated at top level in main.swift and
+// held for the program's lifetime.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var mtkView: EngineView!
     private var renderer: Renderer!
+    private var controls: ControlsPanel!
     private let params = Params()
     private var tuning: Tuning!
 
@@ -16,26 +18,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let frame = NSRect(x: 0, y: 0, width: 1024, height: 1024)
+        let container = NSView(frame: frame)
+        container.autoresizesSubviews = true
 
         mtkView = EngineView(frame: frame, device: device)
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.preferredFramesPerSecond = 60
+        mtkView.autoresizingMask = [.width, .height]
 
         tuning = Tuning(params: params)
         mtkView.onKey = { [weak self] key in self?.tuning.handleKey(key) }
 
         renderer = Renderer(device: device, pixelFormat: mtkView.colorPixelFormat, params: params)
         mtkView.delegate = renderer
+        container.addSubview(mtkView)
+
+        // slider panel, pinned top-left
+        controls = ControlsPanel(params: params, knobs: engineKnobs)
+        controls.setFrameOrigin(NSPoint(x: 12, y: frame.height - controls.frame.height - 12))
+        controls.autoresizingMask = [.maxXMargin, .minYMargin]
+        container.addSubview(controls)
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered,
                           defer: false)
         window.title = "fluoddity-metal"
-        window.contentView = mtkView
+        window.contentView = container
         window.center()
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(mtkView)   // route key events for live tuning
+        window.makeFirstResponder(mtkView)   // keyboard tuning (secondary)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
