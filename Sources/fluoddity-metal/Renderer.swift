@@ -2,6 +2,9 @@ import MetalKit
 import simd
 import Foundation
 
+// One sample of the research diagnostics (fed to the HUD + the time plot).
+struct Diag { var e: Float; var z: Float; var maxW: Float; var div: Float }
+
 // Drives one frame: advance the simulation, then draw the dye fullscreen and
 // the agents as additive points on top. Render-side tunables (toneK,
 // pointAlpha) come from the shared Params each frame.
@@ -11,7 +14,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let params: Params
     private let dyePipe: MTLRenderPipelineState
     private let pointsPipe: MTLRenderPipelineState
-    var onDiagnostics: ((String) -> Void)?     // HUD text sink (set by AppDelegate)
+    var onDiagnostics: ((Diag) -> Void)?       // diagnostics sink (set by AppDelegate)
     private var hudFrame = 0
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
@@ -60,7 +63,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     // Full-field CPU reductions for the research HUD (caller throttles the rate):
     // E = mean|u|², Z = mean ω² (enstrophy), |ω|max (intermittency), mean|div|
     // (should sit near 0 — the incompressibility holding).
-    private func diagnostics() -> String {
+    private func diagnostics() -> Diag {
         let dim = Int(sim.dim.x)
         let n = dim * dim
         let v = sim.vel.contents().bindMemory(to: Float.self, capacity: 2 * n)
@@ -82,8 +85,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             }
         }
         let nn = Float(n)
-        return String(format: "E %.3f    Z %.3f    |\u{03C9}|max %.2f    div %.4f",
-                      Double(energy / nn), Double(enstrophy / nn), Double(maxW), Double(divAbs / nn))
+        return Diag(e: energy / nn, z: enstrophy / nn, maxW: maxW, div: divAbs / nn)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -123,6 +125,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         enc.setFragmentBuffer(sim.vort, offset: 0, index: 8)
         enc.setFragmentBytes(&viewMode, length: 4, index: 9)
         enc.setFragmentBytes(&vortScale, length: 4, index: 10)
+        enc.setFragmentBuffer(sim.divDisp, offset: 0, index: 11)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         // agent points — only over the dye art, not the diagnostic field views

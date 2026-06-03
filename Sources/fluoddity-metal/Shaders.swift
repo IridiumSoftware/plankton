@@ -285,7 +285,8 @@ enum Shaders {
                                 constant float &palette       [[buffer(7)]],
                                 device const float *vort      [[buffer(8)]],
                                 constant float &viewMode      [[buffer(9)]],
-                                constant float &vortScale     [[buffer(10)]]) {
+                                constant float &vortScale     [[buffer(10)]],
+                                device const float *divField  [[buffer(11)]]) {
         int x = clamp(int(in.uv.x * float(d.x)), 0, int(d.x) - 1);
         int y = clamp(int(in.uv.y * float(d.y)), 0, int(d.y) - 1);
         uint idx = uint(y) * d.x + uint(x);
@@ -303,6 +304,13 @@ enum Shaders {
             float e = vort[idx] * vort[idx] * vortScale * vortScale;
             return float4(mix(float3(0.0, 0.0, 0.08), float3(1.0, 0.95, 0.4),
                               1.0 - exp(-e)), 1.0);
+        }
+        if (vm == 3) {                 // divergence — should be ≈0 (incompressible)
+            float dv = divField[idx] * vortScale * 8.0;
+            float3 col = (dv >= 0.0)
+                ? mix(float3(0.02, 0.02, 0.04), float3(1.0, 0.3, 0.3), clamp(dv, 0.0, 1.0))
+                : mix(float3(0.02, 0.02, 0.04), float3(0.3, 0.5, 1.0), clamp(-dv, 0.0, 1.0));
+            return float4(col, 1.0);
         }
 
         // vm == 0: the dye art

@@ -79,6 +79,6 @@ let engineKnobs: [Knob] = [
     Knob(name: "mouseDye",    kp: \.mouseDye,    lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Mouse"),
     Knob(name: "mouseRadius", kp: \.mouseRadius, lo: 0.01,  hi: 0.20,  step: 0.005, group: "Mouse"),
     // ── Research (diagnostics) ──
-    Knob(name: "viewMode",    kp: \.viewMode,    lo: 0.0,   hi: 2.0,   step: 1.0,   group: "Research"),
+    Knob(name: "viewMode",    kp: \.viewMode,    lo: 0.0,   hi: 3.0,   step: 1.0,   group: "Research"),
     Knob(name: "vortScale",   kp: \.vortScale,   lo: 0.5,   hi: 20.0,  step: 0.5,   group: "Research"),
 ]

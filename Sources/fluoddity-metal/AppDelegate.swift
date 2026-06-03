@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var renderer: Renderer!
     private var controls: ControlsPanel!
     private var hud: NSTextField!
+    private var plot: PlotView!
     private let params = Params()
     private let mouse = MouseInput()
     private var tuning: Tuning!
@@ -63,7 +64,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hud.alignment = .right
         hud.autoresizingMask = [.minXMargin, .minYMargin]
         container.addSubview(hud)
-        renderer.onDiagnostics = { [weak self] text in self?.hud.stringValue = text }
+
+        // E/Z time-series plot (below the HUD)
+        plot = PlotView(frame: NSRect(x: frame.width - 312, y: frame.height - 132, width: 300, height: 88))
+        plot.autoresizingMask = [.minXMargin, .minYMargin]
+        container.addSubview(plot)
+
+        renderer.onDiagnostics = { [weak self] d in
+            self?.hud.stringValue = String(format: "E %.3f    Z %.3f    |\u{03C9}|max %.2f    div %.4f",
+                                           Double(d.e), Double(d.z), Double(d.maxW), Double(d.div))
+            self?.plot.push(d.e, d.z)
+        }
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],

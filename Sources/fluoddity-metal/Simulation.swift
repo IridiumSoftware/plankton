@@ -31,6 +31,7 @@ final class Simulation {
     private(set) var dyeBlur: MTLBuffer        // blurred dye for the bloom glow
     private var blurTmp: MTLBuffer             // separable-blur scratch
     private(set) var vort: MTLBuffer           // vorticity ω of the projected field
+    private(set) var divDisp: MTLBuffer         // divergence of the projected field (display)
     let particleBuffer: MTLBuffer
     let ruleBuffer: MTLBuffer          // 20 float4: [0..9] freqs, [10..19] amps
 
@@ -60,7 +61,7 @@ final class Simulation {
         divg = zeroed(n)
         dye = zeroed(n); dyeTmp = zeroed(n)
         dyeBlur = zeroed(n); blurTmp = zeroed(n)
-        vort = zeroed(n)
+        vort = zeroed(n); divDisp = zeroed(n)
 
         var particles = Simulation.seedParticles(count: particleCount)
         particleBuffer = device.makeBuffer(
@@ -166,10 +167,15 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 2)
         }
         swap(&vel, &velTmp)
-        // 7a. vorticity of the projected field (research-viz overlay)
+        // 7a. vorticity + divergence of the projected field (research-viz overlays)
         field(cmd, vortPipe) { e in
             e.setBuffer(self.vel, offset: 0, index: 0)
             e.setBuffer(self.vort, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+        }
+        field(cmd, divPipe) { e in
+            e.setBuffer(self.vel, offset: 0, index: 0)
+            e.setBuffer(self.divDisp, offset: 0, index: 1)
             e.setBytes(&dimv, length: 8, index: 2)
         }
         // 7. advect dye by the projected field (+ decay)
