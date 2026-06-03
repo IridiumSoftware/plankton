@@ -15,6 +15,8 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let dyePipe: MTLRenderPipelineState
     private let pointsPipe: MTLRenderPipelineState
     var onDiagnostics: ((Diag) -> Void)?       // diagnostics sink (set by AppDelegate)
+    var onSpectrum: (([Float]) -> Void)?       // energy spectrum E(k) sink
+    private let spectrum = Spectrum(n: 256)
     private var hudFrame = 0
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
@@ -101,6 +103,12 @@ final class Renderer: NSObject, MTKViewDelegate {
         // last completed frame's fields (before this frame's encode touches them)
         hudFrame += 1
         if params.diagnosticsOn && hudFrame % 20 == 0 { onDiagnostics?(diagnostics()) }
+        if params.diagnosticsOn && hudFrame % 30 == 0 {
+            let n = Int(sim.dim.x)
+            let v = sim.vel.contents().bindMemory(to: Float.self, capacity: 2 * n * n)
+            spectrum.compute(v, dim: n)
+            onSpectrum?(spectrum.ek)
+        }
 
         sim.encode(into: cmd)
 

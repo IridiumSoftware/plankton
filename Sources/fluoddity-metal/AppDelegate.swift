@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controls: ControlsPanel!
     private var hud: NSTextField!
     private var plot: PlotView!
+    private var spectrum: SpectrumView!
     private var help: HelpView!
     private let params = Params()
     private let mouse = MouseInput()
@@ -58,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.params.diagnosticsOn = on
             self.hud.isHidden = !on
             self.plot.isHidden = !on
+            self.spectrum.isHidden = !on
         }
 
         // research HUD (top-right): live E / Z / |ω|max / div readout
@@ -76,6 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         plot = PlotView(frame: NSRect(x: frame.width - 312, y: frame.height - 132, width: 300, height: 88))
         plot.autoresizingMask = [.minXMargin, .minYMargin]
         container.addSubview(plot)
+
+        // energy spectrum E(k) — log-log with a -5/3 reference (below the E/Z plot)
+        spectrum = SpectrumView(frame: NSRect(x: frame.width - 312, y: frame.height - 252, width: 300, height: 108))
+        spectrum.autoresizingMask = [.minXMargin, .minYMargin]
+        container.addSubview(spectrum)
+        renderer.onSpectrum = { [weak self] ek in self?.spectrum.update(ek) }
 
         renderer.onDiagnostics = { [weak self] d in
             self?.hud.stringValue = String(format: "E %.3f    Z %.3f    |\u{03C9}|max %.2f    div %.4f",

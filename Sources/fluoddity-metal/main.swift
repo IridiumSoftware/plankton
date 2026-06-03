@@ -24,6 +24,10 @@ if CommandLine.arguments.contains("--3dtest") {
     runSim3DTest()
     exit(0)
 }
+if CommandLine.arguments.contains("--spectest") {
+    runSpecTest()
+    exit(0)
+}
 
 let app = NSApplication.shared
 // `--3d` launches the 3D engine; default is the 2D app. Both delegates conform
