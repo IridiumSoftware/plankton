@@ -39,7 +39,7 @@ struct MoveParamsGPU {
     var cohesion: Float
 }
 
-// One tunable knob: name, where it lives in Params, range, keyboard step.
+// One tunable knob: name, where it lives in Params, range, keyboard step, group.
 // Shared source of truth for both the slider panel and keyboard tuning.
 struct Knob {
     let name: String
@@ -47,28 +47,33 @@ struct Knob {
     let lo: Float
     let hi: Float
     let step: Float
+    let group: String
 }
 
+// Ordered by group; the panel draws a header whenever the group changes.
 let engineKnobs: [Knob] = [
-    Knob(name: "toneK",       kp: \.toneK,       lo: 0.001, hi: 0.20,  step: 0.002),
-    Knob(name: "swim",        kp: \.swim,        lo: 0.0,   hi: 0.50,  step: 0.01),
-    Knob(name: "sensorDist",  kp: \.sensorDist,  lo: 0.001, hi: 0.10,  step: 0.002),
-    Knob(name: "sensorAngle", kp: \.sensorAngle, lo: 0.0,   hi: 1.50,  step: 0.05),
-    Knob(name: "turn",        kp: \.turn,        lo: 0.0,   hi: 1.50,  step: 0.05),
-    Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25),
-    Knob(name: "senseScale",  kp: \.senseScale,  lo: 0.0,   hi: 20.0,  step: 0.5),
-    Knob(name: "speedGain",   kp: \.speedGain,   lo: 0.0,   hi: 2.0,   step: 0.05),
-    Knob(name: "cohesion",    kp: \.cohesion,    lo: 0.0,   hi: 0.50,  step: 0.01),
-    Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005),
-    Knob(name: "dyeDecay",    kp: \.dyeDecay,    lo: 0.50,  hi: 0.999, step: 0.005),
-    Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05),
-    Knob(name: "pointAlpha",  kp: \.pointAlpha,  lo: 0.0,   hi: 1.0,   step: 0.02),
-    Knob(name: "satGain",     kp: \.satGain,     lo: 0.0,   hi: 3.0,   step: 0.05),
-    Knob(name: "mouseForce",  kp: \.mouseForce,  lo: 0.0,   hi: 1.0,   step: 0.02),
-    Knob(name: "mouseDye",    kp: \.mouseDye,    lo: 0.0,   hi: 20.0,  step: 0.5),
-    Knob(name: "mouseRadius", kp: \.mouseRadius, lo: 0.01,  hi: 0.20,  step: 0.005),
-    Knob(name: "bloomStrength", kp: \.bloomStrength, lo: 0.0, hi: 3.0, step: 0.05),
-    Knob(name: "palette",     kp: \.palette,     lo: 0.0,   hi: 2.0,   step: 1.0),
-    Knob(name: "pointSize",   kp: \.pointSize,   lo: 0.0,   hi: 6.0,   step: 0.5),
-    Knob(name: "mutationStrength", kp: \.mutationStrength, lo: 0.0, hi: 1.5, step: 0.05),
+    // ── Particles (simulation behavior) ──
+    Knob(name: "swim",        kp: \.swim,        lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Particles"),
+    Knob(name: "sensorDist",  kp: \.sensorDist,  lo: 0.001, hi: 0.10,  step: 0.002, group: "Particles"),
+    Knob(name: "sensorAngle", kp: \.sensorAngle, lo: 0.0,   hi: 1.50,  step: 0.05,  group: "Particles"),
+    Knob(name: "turn",        kp: \.turn,        lo: 0.0,   hi: 1.50,  step: 0.05,  group: "Particles"),
+    Knob(name: "senseScale",  kp: \.senseScale,  lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Particles"),
+    Knob(name: "speedGain",   kp: \.speedGain,   lo: 0.0,   hi: 2.0,   step: 0.05,  group: "Particles"),
+    Knob(name: "cohesion",    kp: \.cohesion,    lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Particles"),
+    Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05,  group: "Particles"),
+    Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25,  group: "Particles"),
+    Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005, group: "Particles"),
+    Knob(name: "dyeDecay",    kp: \.dyeDecay,    lo: 0.50,  hi: 0.999, step: 0.005, group: "Particles"),
+    Knob(name: "mutationStrength", kp: \.mutationStrength, lo: 0.0, hi: 1.5, step: 0.05, group: "Particles"),
+    // ── VFX (rendering) ──
+    Knob(name: "toneK",       kp: \.toneK,       lo: 0.001, hi: 0.20,  step: 0.002, group: "VFX"),
+    Knob(name: "satGain",     kp: \.satGain,     lo: 0.0,   hi: 3.0,   step: 0.05,  group: "VFX"),
+    Knob(name: "palette",     kp: \.palette,     lo: 0.0,   hi: 2.0,   step: 1.0,   group: "VFX"),
+    Knob(name: "bloomStrength", kp: \.bloomStrength, lo: 0.0, hi: 3.0, step: 0.05,  group: "VFX"),
+    Knob(name: "pointAlpha",  kp: \.pointAlpha,  lo: 0.0,   hi: 1.0,   step: 0.02,  group: "VFX"),
+    Knob(name: "pointSize",   kp: \.pointSize,   lo: 0.0,   hi: 6.0,   step: 0.5,   group: "VFX"),
+    // ── Mouse (interaction) ──
+    Knob(name: "mouseForce",  kp: \.mouseForce,  lo: 0.0,   hi: 1.0,   step: 0.02,  group: "Mouse"),
+    Knob(name: "mouseDye",    kp: \.mouseDye,    lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Mouse"),
+    Knob(name: "mouseRadius", kp: \.mouseRadius, lo: 0.01,  hi: 0.20,  step: 0.005, group: "Mouse"),
 ]

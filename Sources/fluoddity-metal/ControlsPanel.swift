@@ -1,9 +1,9 @@
 import AppKit
 
-// On-screen tuning panel: a button row (Save / Load / Reset / Brain) plus a
-// labeled NSSlider + live value per knob, overlaid (translucent) on the Metal
-// view. Sliders write straight into the shared Params; buttons fire closures
-// the app wires up. refresh() re-syncs the sliders after a preset load/reset.
+// On-screen tuning panel: a button row (Save / Load / Reset / Brain), then the
+// knobs grouped under headers (Particles / VFX / Mouse), each a labeled NSSlider
+// with a live value. Sliders write straight into the shared Params; buttons fire
+// closures the app wires up. refresh() re-syncs sliders after a preset load/reset.
 final class ControlsPanel: NSView {
     var onSave: (() -> Void)?
     var onLoad: (() -> Void)?
@@ -19,8 +19,12 @@ final class ControlsPanel: NSView {
         self.params = params
         self.knobs = knobs
 
-        let rowH: CGFloat = 26, pad: CGFloat = 8, btnH: CGFloat = 30, width: CGFloat = 324
-        let height = pad * 2 + btnH + CGFloat(knobs.count) * rowH
+        let rowH: CGFloat = 26, headerH: CGFloat = 24, btnH: CGFloat = 30
+        let pad: CGFloat = 8, width: CGFloat = 324
+        let nGroups = CGFloat(Set(knobs.map { $0.group }).count)
+        let headersH: CGFloat = nGroups * headerH
+        let knobsH: CGFloat = CGFloat(knobs.count) * rowH
+        let height: CGFloat = pad * 2 + btnH + headersH + knobsH
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
         wantsLayer = true
@@ -38,11 +42,17 @@ final class ControlsPanel: NSView {
             addSubview(b)
         }
 
-        // slider rows (below the buttons)
+        // grouped knob rows (a header is drawn whenever the group changes)
+        var cursor = height - pad - btnH
+        var lastGroup = ""
         for (i, k) in knobs.enumerated() {
-            let y = height - pad - btnH - CGFloat(i + 1) * rowH + 3
-
-            addSubview(label(k.name, NSRect(x: 8, y: y, width: 100, height: 18), .left))
+            if k.group != lastGroup {
+                lastGroup = k.group
+                addSubview(header(k.group, NSRect(x: 8, y: cursor - headerH + 5, width: width - 16, height: 16)))
+                cursor -= headerH
+            }
+            let y = cursor - rowH + 3
+            addSubview(label(k.name, NSRect(x: 10, y: y, width: 98, height: 18), .left))
 
             let slider = NSSlider(frame: NSRect(x: 112, y: y, width: 156, height: 20))
             slider.minValue = Double(k.lo)
@@ -58,6 +68,8 @@ final class ControlsPanel: NSView {
             let v = label(fmt(params[keyPath: k.kp]), NSRect(x: 272, y: y, width: 46, height: 18), .right)
             valueLabels.append(v)
             addSubview(v)
+
+            cursor -= rowH
         }
     }
 
@@ -66,9 +78,8 @@ final class ControlsPanel: NSView {
     // Re-read params into every slider + value label (after load / reset).
     func refresh() {
         for (i, k) in knobs.enumerated() {
-            let val = params[keyPath: k.kp]
-            sliders[i].doubleValue = Double(val)
-            valueLabels[i].stringValue = fmt(val)
+            sliders[i].doubleValue = Double(params[keyPath: k.kp])
+            valueLabels[i].stringValue = fmt(params[keyPath: k.kp])
         }
     }
 
@@ -90,6 +101,13 @@ final class ControlsPanel: NSView {
     }
 
     private func fmt(_ v: Float) -> String { String(format: "%.3f", v) }
+
+    private func header(_ s: String, _ frame: NSRect) -> NSTextField {
+        let t = label(s.uppercased(), frame, .left)
+        t.textColor = NSColor(calibratedRed: 0.5, green: 0.85, blue: 1.0, alpha: 1.0)
+        t.font = .boldSystemFont(ofSize: 10)
+        return t
+    }
 
     private func label(_ s: String, _ frame: NSRect, _ align: NSTextAlignment) -> NSTextField {
         let t = NSTextField(frame: frame)
