@@ -14,6 +14,7 @@ final class Params {
     var dyeDecay: Float    = 0.985   // dye fade / frame
     var forceGain: Float   = 0.5     // agent velocity → fluid forcing
     var pointAlpha: Float  = 0.10    // agent dot brightness
+    var satGain: Float     = 0.7     // flow speed → color saturation
 }
 
 // Mirrors `struct MoveParams` in Shaders.source (5 floats, 20 bytes).

@@ -28,6 +28,7 @@ final class Tuning {
             Knob(name: "dyeDecay",    kp: \.dyeDecay,    step: 0.005, lo: 0.50,  hi: 0.999),
             Knob(name: "forceGain",   kp: \.forceGain,   step: 0.05,  lo: 0.0,   hi: 5.0),
             Knob(name: "pointAlpha",  kp: \.pointAlpha,  step: 0.02,  lo: 0.0,   hi: 1.0),
+            Knob(name: "satGain",     kp: \.satGain,     step: 0.05,  lo: 0.0,   hi: 3.0),
         ]
         printKeymap()
         printSelected()

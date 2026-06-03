@@ -187,16 +187,25 @@ enum Shaders {
         o.uv = uv;
         return o;
     }
-    fragment float4 fs_fragment(VSOut in                 [[stage_in]],
-                                device const float *dye   [[buffer(0)]],
-                                constant uint2 &d         [[buffer(1)]],
-                                constant float &toneK     [[buffer(2)]]) {
+    static inline float3 hsv2rgb(float3 c) {
+        float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+        float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }
+    fragment float4 fs_fragment(VSOut in                  [[stage_in]],
+                                device const float *dye    [[buffer(0)]],
+                                constant uint2 &d          [[buffer(1)]],
+                                constant float &toneK      [[buffer(2)]],
+                                device const float *vfield [[buffer(3)]],
+                                constant float &satGain    [[buffer(4)]]) {
         int x = clamp(int(in.uv.x * float(d.x)), 0, int(d.x) - 1);
         int y = clamp(int(in.uv.y * float(d.y)), 0, int(d.y) - 1);
-        float v = dye[uint(y) * d.x + uint(x)];
-        float a = 1.0 - exp(-v * toneK);
-        float3 col = mix(float3(0.02, 0.03, 0.07), float3(0.20, 0.85, 0.95), a);
-        return float4(col, 1.0);
+        uint idx = uint(y) * d.x + uint(x);
+        float bright = 1.0 - exp(-dye[idx] * toneK);          // density → brightness
+        float2 fv = float2(vfield[2 * idx], vfield[2 * idx + 1]);
+        float hue = atan2(fv.y, fv.x) / 6.283185 + 0.5;       // flow direction → hue
+        float sat = clamp(length(fv) * satGain, 0.0, 1.0);    // speed → saturation
+        return float4(hsv2rgb(float3(hue, sat, bright)), 1.0);
     }
 
     // ── agent points (additive over the dye) ──────────────────────────────
