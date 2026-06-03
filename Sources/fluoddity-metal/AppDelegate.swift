@@ -28,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mtkView.autoresizingMask = [.width, .height]
 
         tuning = Tuning(params: params)
-        mtkView.onKey = { [weak self] key in self?.tuning.handleKey(key) }
+        mtkView.onKey = { [weak self] key in
+            guard let self else { return }
+            if key == "r" { self.renderer?.reroll() } else { self.tuning.handleKey(key) }
+        }
         mtkView.mouseInput = mouse
 
         renderer = Renderer(device: device, pixelFormat: mtkView.colorPixelFormat,

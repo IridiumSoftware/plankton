@@ -19,7 +19,7 @@ enum Shaders {
     using namespace metal;
 
     struct Particle { float2 pos; float2 vel; };
-    struct MoveParams { float swim; float sensorDist; float sensorAngle; float turn; float fluidPull; };
+    struct MoveParams { float swim; float sensorDist; float sensorAngle; float turn; float fluidPull; float senseScale; float speedGain; };
     struct MouseUniform { float2 pos; float2 vel; float radius; float forceGain; float dyeGain; float active; };
 
     // fixed (non-live) constants
@@ -172,27 +172,51 @@ enum Shaders {
         dout[i] = sampleScalar(din, pos, d) * dyeDecay;
     }
 
-    // ── 7. agents: sense dye → steer → swim + carried by the fluid ────────
-    kernel void move_particles(device Particle *parts   [[buffer(0)]],
-                               device const float *v     [[buffer(1)]],
-                               device const float *dye   [[buffer(2)]],
-                               constant uint2 &d         [[buffer(3)]],
-                               constant MoveParams &mp   [[buffer(4)]],
+    // 80-param symmetric brain: 10 Fourier centers (rule[0..9] = frequencies,
+    // rule[10..19] = amplitudes), a 4D→4D sum of sines.  out = Σ amp·sin(freq·x).
+    static inline float4 fourier(device const float4 *rule, float4 x) {
+        float4 acc = float4(0.0);
+        for (int i = 0; i < 10; i++) {
+            acc += rule[10 + i] * sin(dot(rule[i], x));
+        }
+        return acc;
+    }
+
+    // ── 7. agents: sense the flow at two sensors → Fourier brain (mirror-
+    //        averaged) → steer/speed → swim + carried by the fluid ──────────
+    kernel void move_particles(device Particle *parts      [[buffer(0)]],
+                               device const float *v        [[buffer(1)]],
+                               constant uint2 &d            [[buffer(2)]],
+                               constant MoveParams &mp      [[buffer(3)]],
+                               device const float4 *rule    [[buffer(4)]],
                                uint gid [[thread_position_in_grid]]) {
         Particle p = parts[gid];
         float2 dd = float2(d);
         float spd = length(p.vel);
-        float2 dir = spd > 1e-6 ? p.vel / spd : float2(1.0, 0.0);
+        float2 fwd = spd > 1e-6 ? p.vel / spd : float2(1.0, 0.0);
+        float2 lft = float2(fwd.y, -fwd.x);
 
-        float cF = sampleScalar(dye, (p.pos + dir * mp.sensorDist) * dd, d);
-        float lF = sampleScalar(dye, (p.pos + rotate(dir,  mp.sensorAngle) * mp.sensorDist) * dd, d);
-        float rF = sampleScalar(dye, (p.pos + rotate(dir, -mp.sensorAngle) * mp.sensorDist) * dd, d);
-        float steer = (cF >= lF && cF >= rF) ? 0.0 : (lF > rF ? mp.turn : -mp.turn);
-        dir = rotate(dir, steer);
-        p.vel = dir * mp.swim;                    // steered swim velocity = fluid forcing
+        // sample the velocity field at the left/right sensors, in the agent's
+        // local (forward, left) frame → rotation-invariant brain input
+        float2 vL = sampleVel(v, (p.pos + rotate(fwd,  mp.sensorAngle) * mp.sensorDist) * dd, d);
+        float2 vR = sampleVel(v, (p.pos + rotate(fwd, -mp.sensorAngle) * mp.sensorDist) * dd, d);
+        float2 L = float2(dot(vL, fwd), dot(vL, lft)) * mp.senseScale;
+        float2 R = float2(dot(vR, fwd), dot(vR, lft)) * mp.senseScale;
 
-        float2 fv = sampleVel(v, p.pos * dd, d);  // cells/frame
-        float2 disp = dir * mp.swim * AGENT_DT + (fv / dd) * mp.fluidPull;
+        // evaluate twice, mirrored, and combine: axial reflection-even,
+        // turn reflection-odd (keeps the rule free of clockwise/ccw bias)
+        float4 base = fourier(rule, float4(L.x, L.y, R.x, R.y));
+        float4 mir  = fourier(rule, float4(R.x, -R.y, L.x, -L.y));
+        float axial = base.x + mir.x;
+        float turnT = base.y - mir.y;
+
+        float2 nd = rotate(fwd, turnT * mp.turn);
+        float newSpeed = clamp(mp.swim * (1.0 + axial * mp.speedGain),
+                               mp.swim * 0.2, mp.swim * 2.0);
+        p.vel = nd * newSpeed;                     // brain-steered velocity = fluid forcing
+
+        float2 fv = sampleVel(v, p.pos * dd, d);
+        float2 disp = nd * newSpeed * AGENT_DT + (fv / dd) * mp.fluidPull;
         p.pos = fract(p.pos + disp);
         parts[gid] = p;
     }

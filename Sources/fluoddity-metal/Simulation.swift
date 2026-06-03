@@ -27,6 +27,7 @@ final class Simulation {
     private(set) var dye: MTLBuffer
     private var dyeTmp: MTLBuffer
     let particleBuffer: MTLBuffer
+    let ruleBuffer: MTLBuffer          // 20 float4: [0..9] freqs, [10..19] amps
 
     private let scalePipe, advectVelPipe, splatPipe, mouseStirPipe, divPipe,
                 jacobiPipe, subGradPipe, advectDyePipe, movePipe: MTLComputePipelineState
@@ -82,6 +83,12 @@ final class Simulation {
             length: MemoryLayout<Particle>.stride * particleCount,
             options: .storageModeShared)!
 
+        var rule = Simulation.randomRule()
+        ruleBuffer = device.makeBuffer(
+            bytes: &rule,
+            length: 20 * MemoryLayout<SIMD4<Float>>.stride,
+            options: .storageModeShared)!
+
         func pipe(_ name: String) -> MTLComputePipelineState {
             guard let fn = library.makeFunction(name: name) else {
                 fatalError("kernel `\(name)` not found")
@@ -108,7 +115,8 @@ final class Simulation {
         var dyeDecayv = params.dyeDecay
         var mp = MoveParamsGPU(swim: params.swim, sensorDist: params.sensorDist,
                                sensorAngle: params.sensorAngle, turn: params.turn,
-                               fluidPull: params.fluidPull)
+                               fluidPull: params.fluidPull, senseScale: params.senseScale,
+                               speedGain: params.speedGain)
 
         // 1. advect velocity (vel → velTmp)
         field(cmd, advectVelPipe) { e in
@@ -175,14 +183,36 @@ final class Simulation {
             e.setBytes(&dyeDecayv, length: 4, index: 4)
         }
         swap(&dye, &dyeTmp)
-        // 8. agents sense the dye, steer, swim + get carried by the flow
+        // 8. agents: sense the flow → Fourier brain → steer + ride the fluid
         particles(cmd, movePipe) { e in
             e.setBuffer(self.particleBuffer, offset: 0, index: 0)
             e.setBuffer(self.vel, offset: 0, index: 1)
-            e.setBuffer(self.dye, offset: 0, index: 2)
-            e.setBytes(&dimv, length: 8, index: 3)
-            e.setBytes(&mp, length: MemoryLayout<MoveParamsGPU>.stride, index: 4)
+            e.setBytes(&dimv, length: 8, index: 2)
+            e.setBytes(&mp, length: MemoryLayout<MoveParamsGPU>.stride, index: 3)
+            e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
         }
+    }
+
+    // Generate a fresh random brain (10 freq float4 + 10 amp float4).
+    static func randomRule() -> [SIMD4<Float>] {
+        var rng = SystemRandomNumberGenerator()
+        var r = [SIMD4<Float>]()
+        for _ in 0..<10 {
+            r.append(SIMD4(Float.random(in: -2...2, using: &rng), Float.random(in: -2...2, using: &rng),
+                           Float.random(in: -2...2, using: &rng), Float.random(in: -2...2, using: &rng)))
+        }
+        for _ in 0..<10 {
+            r.append(SIMD4(Float.random(in: -1...1, using: &rng), Float.random(in: -1...1, using: &rng),
+                           Float.random(in: -1...1, using: &rng), Float.random(in: -1...1, using: &rng)))
+        }
+        return r
+    }
+
+    // Re-roll the global brain in place (bound to the `r` key).
+    func rerollRule() {
+        var r = Simulation.randomRule()
+        memcpy(ruleBuffer.contents(), &r, 20 * MemoryLayout<SIMD4<Float>>.stride)
+        print("brain re-rolled")
     }
 
     // ── encoder helpers ─────────────────────────────────────────────────

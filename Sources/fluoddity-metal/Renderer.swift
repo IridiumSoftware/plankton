@@ -50,6 +50,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
+    func reroll() { sim.rerollRule() }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
