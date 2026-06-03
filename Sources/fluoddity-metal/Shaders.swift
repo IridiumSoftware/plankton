@@ -23,8 +23,7 @@ enum Shaders {
     struct MouseUniform { float2 pos; float2 vel; float radius; float forceGain; float dyeGain; float active; };
 
     // fixed (non-live) constants
-    constant float AGENT_DT   = 0.0167;   // agent step (≈1/60)
-    constant float POINT_SIZE = 1.5;      // agent dot size (px)
+    constant float AGENT_DT = 0.0167;     // agent step (≈1/60)
 
     // ── helpers ───────────────────────────────────────────────────────────
     static inline int wrapi(int a, int n) { return ((a % n) + n) % n; }
@@ -172,6 +171,22 @@ enum Shaders {
         dout[i] = sampleScalar(din, pos, d) * dyeDecay;
     }
 
+    // ── 6b. separable box blur (run twice: horizontal then vertical) for the
+    //        bloom glow buffer ─────────────────────────────────────────────
+    kernel void box_blur(device const float *src [[buffer(0)]],
+                         device float *dst         [[buffer(1)]],
+                         constant uint2 &d         [[buffer(2)]],
+                         constant int2 &step       [[buffer(3)]],
+                         constant int &radius      [[buffer(4)]],
+                         uint2 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y) return;
+        float sum = 0.0;
+        for (int k = -radius; k <= radius; k++) {
+            sum += src[cidx(int(gid.x) + step.x * k, int(gid.y) + step.y * k, d)];
+        }
+        dst[gid.y * d.x + gid.x] = sum / float(2 * radius + 1);
+    }
+
     // 80-param symmetric brain: 10 Fourier centers (rule[0..9] = frequencies,
     // rule[10..19] = amplitudes), a 4D→4D sum of sines.  out = Σ amp·sin(freq·x).
     static inline float4 fourier(device const float4 *rule, float4 x) {
@@ -235,36 +250,66 @@ enum Shaders {
         float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
         return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
     }
-    fragment float4 fs_fragment(VSOut in                  [[stage_in]],
-                                device const float *dye    [[buffer(0)]],
-                                constant uint2 &d          [[buffer(1)]],
-                                constant float &toneK      [[buffer(2)]],
-                                device const float *vfield [[buffer(3)]],
-                                constant float &satGain    [[buffer(4)]]) {
+    fragment float4 fs_fragment(VSOut in                     [[stage_in]],
+                                device const float *dye       [[buffer(0)]],
+                                constant uint2 &d             [[buffer(1)]],
+                                constant float &toneK         [[buffer(2)]],
+                                device const float *vfield    [[buffer(3)]],
+                                constant float &satGain       [[buffer(4)]],
+                                device const float *dyeBlur   [[buffer(5)]],
+                                constant float &bloomStrength [[buffer(6)]],
+                                constant float &palette       [[buffer(7)]]) {
         int x = clamp(int(in.uv.x * float(d.x)), 0, int(d.x) - 1);
         int y = clamp(int(in.uv.y * float(d.y)), 0, int(d.y) - 1);
         uint idx = uint(y) * d.x + uint(x);
-        float bright = 1.0 - exp(-dye[idx] * toneK);          // density → brightness
+        float bright = 1.0 - exp(-dye[idx] * toneK);
         float2 fv = float2(vfield[2 * idx], vfield[2 * idx + 1]);
-        float hue = atan2(fv.y, fv.x) / 6.283185 + 0.5;       // flow direction → hue
-        float sat = clamp(length(fv) * satGain, 0.0, 1.0);    // speed → saturation
-        return float4(hsv2rgb(float3(hue, sat, bright)), 1.0);
+        float speed = length(fv);
+        int pal = int(palette + 0.5);
+
+        float3 col;
+        if (pal <= 0) {
+            // 0: hue = flow direction, saturation = speed
+            float hue = atan2(fv.y, fv.x) / 6.283185 + 0.5;
+            col = hsv2rgb(float3(hue, clamp(speed * satGain, 0.0, 1.0), bright));
+        } else if (pal == 1) {
+            // 1: thermal — speed ramps blue → cyan → white → amber
+            float t = clamp(speed * satGain, 0.0, 1.0);
+            float3 c = mix(float3(0.0, 0.05, 0.25), float3(0.0, 0.7, 0.9), smoothstep(0.0, 0.5, t));
+            c = mix(c, float3(1.0, 1.0, 0.85), smoothstep(0.4, 0.8, t));
+            c = mix(c, float3(1.0, 0.55, 0.1), smoothstep(0.75, 1.0, t));
+            col = c * bright;
+        } else {
+            // 2: teal duotone (calm)
+            col = mix(float3(0.02, 0.04, 0.06), float3(0.10, 0.90, 0.80), bright);
+        }
+
+        // bloom: soft glow from the blurred dye
+        float glow = 1.0 - exp(-dyeBlur[idx] * toneK);
+        col += float3(0.35, 0.7, 0.95) * glow * bloomStrength;
+        return float4(col, 1.0);
     }
 
-    // ── agent points (additive over the dye) ──────────────────────────────
-    struct PointOut { float4 position [[position]]; float pointSize [[point_size]]; };
+    // ── agent points: additive, sized by speed, hued by heading ───────────
+    struct PointOut { float4 position [[position]]; float pointSize [[point_size]]; float hue; };
     vertex PointOut point_vertex(uint vid                  [[vertex_id]],
-                                 device const Particle *parts [[buffer(0)]]) {
+                                 device const Particle *parts [[buffer(0)]],
+                                 constant float &pointSize    [[buffer(1)]]) {
         Particle p = parts[vid];
+        float spd = length(p.vel);
         PointOut o;
         o.position = float4(p.pos * 2.0 - 1.0, 0.0, 1.0);
-        o.pointSize = POINT_SIZE;
+        o.pointSize = pointSize * (1.0 + spd * 4.0);
+        o.hue = atan2(p.vel.y, p.vel.x) / 6.283185 + 0.5;
         return o;
     }
-    fragment float4 point_fragment(float2 pc            [[point_coord]],
-                                   constant float &alpha [[buffer(0)]]) {
-        if (length(pc - 0.5) > 0.5) discard_fragment();
-        return float4(float3(0.7, 0.95, 1.0) * alpha, alpha);
+    fragment float4 point_fragment(PointOut in            [[stage_in]],
+                                   float2 pc             [[point_coord]],
+                                   constant float &alpha  [[buffer(0)]]) {
+        float r = length(pc - 0.5) * 2.0;          // 0 center → 1 edge
+        if (r > 1.0) discard_fragment();
+        float a = alpha * (1.0 - r * r);           // soft round falloff
+        return float4(hsv2rgb(float3(in.hue, 0.55, 1.0)) * a, a);
     }
     """
 }

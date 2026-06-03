@@ -71,17 +71,24 @@ final class Renderer: NSObject, MTKViewDelegate {
         var dim = sim.dim
         var toneK = params.toneK
         var satGain = params.satGain
+        var bloomStrength = params.bloomStrength
+        var palette = params.palette
         enc.setRenderPipelineState(dyePipe)
         enc.setFragmentBuffer(sim.dye, offset: 0, index: 0)
         enc.setFragmentBytes(&dim, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
         enc.setFragmentBytes(&toneK, length: 4, index: 2)
         enc.setFragmentBuffer(sim.vel, offset: 0, index: 3)
         enc.setFragmentBytes(&satGain, length: 4, index: 4)
+        enc.setFragmentBuffer(sim.dyeBlur, offset: 0, index: 5)
+        enc.setFragmentBytes(&bloomStrength, length: 4, index: 6)
+        enc.setFragmentBytes(&palette, length: 4, index: 7)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         var pointAlpha = params.pointAlpha
+        var pointSize = params.pointSize
         enc.setRenderPipelineState(pointsPipe)
         enc.setVertexBuffer(sim.particleBuffer, offset: 0, index: 0)
+        enc.setVertexBytes(&pointSize, length: 4, index: 1)
         enc.setFragmentBytes(&pointAlpha, length: 4, index: 0)
         enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.particleCount)
 

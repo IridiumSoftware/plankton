@@ -26,11 +26,13 @@ final class Simulation {
     private let divg: MTLBuffer
     private(set) var dye: MTLBuffer
     private var dyeTmp: MTLBuffer
+    private(set) var dyeBlur: MTLBuffer        // blurred dye for the bloom glow
+    private var blurTmp: MTLBuffer             // separable-blur scratch
     let particleBuffer: MTLBuffer
     let ruleBuffer: MTLBuffer          // 20 float4: [0..9] freqs, [10..19] amps
 
     private let scalePipe, advectVelPipe, splatPipe, mouseStirPipe, divPipe,
-                jacobiPipe, subGradPipe, advectDyePipe, movePipe: MTLComputePipelineState
+                jacobiPipe, subGradPipe, advectDyePipe, movePipe, blurPipe: MTLComputePipelineState
 
     private let dyeAmount: Float = 1.0     // not live-tuned
     var jacobiIters: Int = 30              // not live-tuned (changes encoder count)
@@ -53,6 +55,7 @@ final class Simulation {
         pressure = zeroed(n); pressureTmp = zeroed(n)
         divg = zeroed(n)
         dye = zeroed(n); dyeTmp = zeroed(n)
+        dyeBlur = zeroed(n); blurTmp = zeroed(n)
 
         var particles = Simulation.seedParticles(count: particleCount)
         particleBuffer = device.makeBuffer(
@@ -81,6 +84,7 @@ final class Simulation {
         subGradPipe   = pipe("subtract_gradient")
         advectDyePipe = pipe("advect_dye")
         movePipe      = pipe("move_particles")
+        blurPipe      = pipe("box_blur")
     }
 
     func encode(into cmd: MTLCommandBuffer) {
@@ -160,6 +164,23 @@ final class Simulation {
             e.setBytes(&dyeDecayv, length: 4, index: 4)
         }
         swap(&dye, &dyeTmp)
+        // 7b. blur dye → dyeBlur (separable box blur) for the bloom glow
+        var stepH = SIMD2<Int32>(1, 0), stepV = SIMD2<Int32>(0, 1)
+        var radius: Int32 = 10
+        field(cmd, blurPipe) { e in
+            e.setBuffer(self.dye, offset: 0, index: 0)
+            e.setBuffer(self.blurTmp, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+            e.setBytes(&stepH, length: 8, index: 3)
+            e.setBytes(&radius, length: 4, index: 4)
+        }
+        field(cmd, blurPipe) { e in
+            e.setBuffer(self.blurTmp, offset: 0, index: 0)
+            e.setBuffer(self.dyeBlur, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+            e.setBytes(&stepV, length: 8, index: 3)
+            e.setBytes(&radius, length: 4, index: 4)
+        }
         // 8. agents: sense the flow → Fourier brain → steer + ride the fluid
         particles(cmd, movePipe) { e in
             e.setBuffer(self.particleBuffer, offset: 0, index: 0)
