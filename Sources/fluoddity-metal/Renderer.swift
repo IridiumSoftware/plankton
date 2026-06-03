@@ -51,6 +51,9 @@ final class Renderer: NSObject, MTKViewDelegate {
     }
 
     func reroll() { sim.rerollRule() }
+    func reset() { sim.reset() }
+    func ruleSnapshot() -> [Float] { sim.ruleSnapshot() }
+    func loadRule(_ floats: [Float]) { sim.loadRule(floats) }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 

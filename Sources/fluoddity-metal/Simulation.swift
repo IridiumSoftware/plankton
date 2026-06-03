@@ -54,30 +54,7 @@ final class Simulation {
         divg = zeroed(n)
         dye = zeroed(n); dyeTmp = zeroed(n)
 
-        // Particles: random position; velocity = overlaid Gaussian vortices so
-        // the opening flow is visibly swirling.
-        struct Vortex { var c: SIMD2<Float>; var s: Float; var r: Float }
-        var rng = SystemRandomNumberGenerator()
-        var vortices = [Vortex]()
-        for _ in 0..<6 {
-            vortices.append(Vortex(
-                c: SIMD2(Float.random(in: 0..<1, using: &rng), Float.random(in: 0..<1, using: &rng)),
-                s: Float.random(in: -1..<1, using: &rng),
-                r: Float.random(in: 0.12..<0.30, using: &rng)))
-        }
-        var particles = [Particle](); particles.reserveCapacity(particleCount)
-        for _ in 0..<particleCount {
-            let pos = SIMD2(Float.random(in: 0..<1, using: &rng),
-                            Float.random(in: 0..<1, using: &rng))
-            var v = SIMD2<Float>(0, 0)
-            for vt in vortices {
-                let dvec = pos - vt.c
-                let fall = exp(-simd_length_squared(dvec) / (vt.r * vt.r))
-                v += vt.s * SIMD2(-dvec.y, dvec.x) * fall
-            }
-            v *= 0.12
-            particles.append(Particle(pos: pos, vel: v))
-        }
+        var particles = Simulation.seedParticles(count: particleCount)
         particleBuffer = device.makeBuffer(
             bytes: &particles,
             length: MemoryLayout<Particle>.stride * particleCount,
@@ -191,6 +168,55 @@ final class Simulation {
             e.setBytes(&mp, length: MemoryLayout<MoveParamsGPU>.stride, index: 3)
             e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
         }
+    }
+
+    // Particles at random positions with velocities from a few overlaid Gaussian
+    // vortices, so the opening / post-reset flow is visibly swirling.
+    static func seedParticles(count: Int) -> [Particle] {
+        struct Vortex { var c: SIMD2<Float>; var s: Float; var r: Float }
+        var rng = SystemRandomNumberGenerator()
+        var vortices = [Vortex]()
+        for _ in 0..<6 {
+            vortices.append(Vortex(
+                c: SIMD2(Float.random(in: 0..<1, using: &rng), Float.random(in: 0..<1, using: &rng)),
+                s: Float.random(in: -1..<1, using: &rng),
+                r: Float.random(in: 0.12..<0.30, using: &rng)))
+        }
+        var particles = [Particle](); particles.reserveCapacity(count)
+        for _ in 0..<count {
+            let pos = SIMD2(Float.random(in: 0..<1, using: &rng),
+                            Float.random(in: 0..<1, using: &rng))
+            var v = SIMD2<Float>(0, 0)
+            for vt in vortices {
+                let dvec = pos - vt.c
+                let fall = exp(-simd_length_squared(dvec) / (vt.r * vt.r))
+                v += vt.s * SIMD2(-dvec.y, dvec.x) * fall
+            }
+            particles.append(Particle(pos: pos, vel: v * 0.12))
+        }
+        return particles
+    }
+
+    // Clear all fields and re-seed the particles (fresh canvas, same params/brain).
+    func reset() {
+        for b in [vel, velTmp, pressure, pressureTmp, divg, dye, dyeTmp] {
+            memset(b.contents(), 0, b.length)
+        }
+        var particles = Simulation.seedParticles(count: particleCount)
+        memcpy(particleBuffer.contents(), &particles,
+               MemoryLayout<Particle>.stride * particleCount)
+        print("reset")
+    }
+
+    // Read / write the 80-float brain (for presets).
+    func ruleSnapshot() -> [Float] {
+        let p = ruleBuffer.contents().bindMemory(to: Float.self, capacity: 80)
+        return Array(UnsafeBufferPointer(start: p, count: 80))
+    }
+    func loadRule(_ floats: [Float]) {
+        guard floats.count == 80 else { return }
+        var f = floats
+        memcpy(ruleBuffer.contents(), &f, 80 * MemoryLayout<Float>.stride)
     }
 
     // Generate a fresh random brain (10 freq float4 + 10 amp float4).

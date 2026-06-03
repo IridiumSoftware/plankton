@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let params = Params()
     private let mouse = MouseInput()
     private var tuning: Tuning!
+    private var loadIndex = -1
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -45,6 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controls.autoresizingMask = [.maxXMargin, .minYMargin]
         container.addSubview(controls)
 
+        controls.onReset  = { [weak self] in self?.renderer?.reset() }
+        controls.onReroll = { [weak self] in self?.renderer?.reroll() }
+        controls.onSave   = { [weak self] in self?.savePreset() }
+        controls.onLoad   = { [weak self] in self?.loadNextPreset() }
+
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered,
@@ -54,6 +60,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(mtkView)   // keyboard tuning (secondary)
+    }
+
+    // ── presets ─────────────────────────────────────────────────────────
+    private func savePreset() {
+        let dict = Dictionary(uniqueKeysWithValues:
+            engineKnobs.map { ($0.name, params[keyPath: $0.kp]) })
+        let data = PresetData(params: dict, rule: renderer.ruleSnapshot())
+        if let url = Presets.save(data) { print("saved \(url.lastPathComponent)") }
+    }
+
+    private func loadNextPreset() {
+        let files = Presets.list()
+        guard !files.isEmpty else { print("no presets saved yet"); return }
+        loadIndex = (loadIndex + 1) % files.count
+        guard let p = Presets.load(files[loadIndex]) else { return }
+        for k in engineKnobs { if let v = p.params[k.name] { params[keyPath: k.kp] = v } }
+        renderer.loadRule(p.rule)
+        controls.refresh()
+        print("loaded \(files[loadIndex].lastPathComponent)")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

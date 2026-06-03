@@ -7,5 +7,8 @@ DerivedData/
 *.xcworkspace
 xcuserdata/
 
+# user-saved presets
+presets/
+
 # macOS
 .DS_Store
