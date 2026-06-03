@@ -12,6 +12,7 @@ final class Params {
     var fluidPull: Float   = 2.0     // how strongly the fluid carries agents
     var senseScale: Float  = 5.0     // scales sensed flow into the brain input
     var speedGain: Float   = 0.5     // brain axial output → speed modulation
+    var cohesion: Float    = 0.05    // chemotaxis up the dye gradient → aggregation
     var velDamp: Float     = 0.95    // fluid energy bleed / frame
     var dyeDecay: Float    = 0.985   // dye fade / frame
     var forceGain: Float   = 0.5     // agent velocity → fluid forcing
@@ -35,6 +36,7 @@ struct MoveParamsGPU {
     var fluidPull: Float
     var senseScale: Float
     var speedGain: Float
+    var cohesion: Float
 }
 
 // One tunable knob: name, where it lives in Params, range, keyboard step.
@@ -56,6 +58,7 @@ let engineKnobs: [Knob] = [
     Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25),
     Knob(name: "senseScale",  kp: \.senseScale,  lo: 0.0,   hi: 20.0,  step: 0.5),
     Knob(name: "speedGain",   kp: \.speedGain,   lo: 0.0,   hi: 2.0,   step: 0.05),
+    Knob(name: "cohesion",    kp: \.cohesion,    lo: 0.0,   hi: 0.50,  step: 0.01),
     Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005),
     Knob(name: "dyeDecay",    kp: \.dyeDecay,    lo: 0.50,  hi: 0.999, step: 0.005),
     Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05),

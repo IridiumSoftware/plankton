@@ -104,7 +104,7 @@ final class Simulation {
         var mp = MoveParamsGPU(swim: params.swim, sensorDist: params.sensorDist,
                                sensorAngle: params.sensorAngle, turn: params.turn,
                                fluidPull: params.fluidPull, senseScale: params.senseScale,
-                               speedGain: params.speedGain)
+                               speedGain: params.speedGain, cohesion: params.cohesion)
 
         // 1. advect velocity (vel → velTmp)
         field(cmd, advectVelPipe) { e in
@@ -196,6 +196,7 @@ final class Simulation {
             e.setBytes(&mp, length: MemoryLayout<MoveParamsGPU>.stride, index: 3)
             e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
             e.setBytes(&countv, length: 4, index: 5)
+            e.setBuffer(self.dye, offset: 0, index: 6)
         }
     }
 

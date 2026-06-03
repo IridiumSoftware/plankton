@@ -19,7 +19,7 @@ enum Shaders {
     using namespace metal;
 
     struct Particle { float2 pos; float2 vel; };
-    struct MoveParams { float swim; float sensorDist; float sensorAngle; float turn; float fluidPull; float senseScale; float speedGain; };
+    struct MoveParams { float swim; float sensorDist; float sensorAngle; float turn; float fluidPull; float senseScale; float speedGain; float cohesion; };
     struct MouseUniform { float2 pos; float2 vel; float radius; float forceGain; float dyeGain; float active; };
 
     // fixed (non-live) constants
@@ -208,6 +208,7 @@ enum Shaders {
                                constant MoveParams &mp      [[buffer(3)]],
                                device const float4 *rule    [[buffer(4)]],
                                constant uint &count         [[buffer(5)]],
+                               device const float *dye      [[buffer(6)]],
                                uint gid [[thread_position_in_grid]]) {
         Particle p = parts[gid];
         uint off = ((gid * uint(N_COHORTS)) / count) * 20;   // this agent's cohort block
@@ -230,7 +231,13 @@ enum Shaders {
         float axial = base.x + mir.x;
         float turnT = base.y - mir.y;
 
-        float2 nd = rotate(fwd, turnT * mp.turn);
+        // chemotaxis: steer toward higher dye (= agent density) → aggregation,
+        // the ingredient that lets agents clump into membrane/vacuole structures
+        float dL = sampleScalar(dye, (p.pos + rotate(fwd,  mp.sensorAngle) * mp.sensorDist) * dd, d);
+        float dR = sampleScalar(dye, (p.pos + rotate(fwd, -mp.sensorAngle) * mp.sensorDist) * dd, d);
+        float chemTurn = (dL - dR) * mp.cohesion;
+
+        float2 nd = rotate(fwd, turnT * mp.turn + chemTurn);
         float newSpeed = clamp(mp.swim * (1.0 + axial * mp.speedGain),
                                mp.swim * 0.2, mp.swim * 2.0);
         p.vel = nd * newSpeed;                     // brain-steered velocity = fluid forcing
