@@ -20,9 +20,16 @@ if CommandLine.arguments.contains("--simtest") {
     runSimTest()
     exit(0)
 }
+if CommandLine.arguments.contains("--3dtest") {
+    runSim3DTest()
+    exit(0)
+}
 
 let app = NSApplication.shared
-let appDelegate = AppDelegate()        // top-level `let` → retained for program lifetime
+// `--3d` launches the 3D engine; default is the 2D app. Both delegates conform
+// to NSApplicationDelegate; the top-level `let` keeps the chosen one retained.
+let appDelegate: NSApplicationDelegate =
+    CommandLine.arguments.contains("--3d") ? App3D() : AppDelegate()
 app.delegate = appDelegate
 app.setActivationPolicy(.regular)
 app.activate(ignoringOtherApps: true)
