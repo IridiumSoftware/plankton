@@ -248,6 +248,18 @@ enum Shaders {
         parts[gid] = p;
     }
 
+    // ── research-viz: vorticity ω = ∂v/∂x − ∂u/∂y (the 2D-NS state variable) ─
+    kernel void vorticity(device const float *v [[buffer(0)]],
+                          device float *vort      [[buffer(1)]],
+                          constant uint2 &d       [[buffer(2)]],
+                          uint2 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y) return;
+        int x = int(gid.x), y = int(gid.y);
+        float vyR = velAt(v, x + 1, y, d).y, vyL = velAt(v, x - 1, y, d).y;
+        float vxT = velAt(v, x, y + 1, d).x, vxB = velAt(v, x, y - 1, d).x;
+        vort[gid.y * d.x + gid.x] = 0.5 * ((vyR - vyL) - (vxT - vxB));
+    }
+
     // ── fullscreen render: dye → calm glow ────────────────────────────────
     struct VSOut { float4 position [[position]]; float2 uv; };
     vertex VSOut fs_vertex(uint vid [[vertex_id]]) {
@@ -270,10 +282,30 @@ enum Shaders {
                                 constant float &satGain       [[buffer(4)]],
                                 device const float *dyeBlur   [[buffer(5)]],
                                 constant float &bloomStrength [[buffer(6)]],
-                                constant float &palette       [[buffer(7)]]) {
+                                constant float &palette       [[buffer(7)]],
+                                device const float *vort      [[buffer(8)]],
+                                constant float &viewMode      [[buffer(9)]],
+                                constant float &vortScale     [[buffer(10)]]) {
         int x = clamp(int(in.uv.x * float(d.x)), 0, int(d.x) - 1);
         int y = clamp(int(in.uv.y * float(d.y)), 0, int(d.y) - 1);
         uint idx = uint(y) * d.x + uint(x);
+
+        // research-viz overlays
+        int vm = int(viewMode + 0.5);
+        if (vm == 1) {                 // vorticity ω — CCW warm, CW cool
+            float w = vort[idx] * vortScale;
+            float3 col = (w >= 0.0)
+                ? mix(float3(0.03, 0.03, 0.05), float3(1.0, 0.45, 0.1), clamp(w, 0.0, 1.0))
+                : mix(float3(0.03, 0.03, 0.05), float3(0.1, 0.5, 1.0), clamp(-w, 0.0, 1.0));
+            return float4(col, 1.0);
+        }
+        if (vm == 2) {                 // enstrophy |ω|² — rotational intensity
+            float e = vort[idx] * vort[idx] * vortScale * vortScale;
+            return float4(mix(float3(0.0, 0.0, 0.08), float3(1.0, 0.95, 0.4),
+                              1.0 - exp(-e)), 1.0);
+        }
+
+        // vm == 0: the dye art
         float bright = 1.0 - exp(-dye[idx] * toneK);
         float2 fv = float2(vfield[2 * idx], vfield[2 * idx + 1]);
         float speed = length(fv);

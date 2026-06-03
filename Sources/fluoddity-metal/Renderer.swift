@@ -82,17 +82,25 @@ final class Renderer: NSObject, MTKViewDelegate {
         enc.setFragmentBuffer(sim.dyeBlur, offset: 0, index: 5)
         enc.setFragmentBytes(&bloomStrength, length: 4, index: 6)
         enc.setFragmentBytes(&palette, length: 4, index: 7)
+        var viewMode = params.viewMode
+        var vortScale = params.vortScale
+        enc.setFragmentBuffer(sim.vort, offset: 0, index: 8)
+        enc.setFragmentBytes(&viewMode, length: 4, index: 9)
+        enc.setFragmentBytes(&vortScale, length: 4, index: 10)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
-        var pointAlpha = params.pointAlpha
-        var pointSize = params.pointSize
-        var count = UInt32(sim.particleCount)
-        enc.setRenderPipelineState(pointsPipe)
-        enc.setVertexBuffer(sim.particleBuffer, offset: 0, index: 0)
-        enc.setVertexBytes(&pointSize, length: 4, index: 1)
-        enc.setVertexBytes(&count, length: 4, index: 2)
-        enc.setFragmentBytes(&pointAlpha, length: 4, index: 0)
-        enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.particleCount)
+        // agent points — only over the dye art, not the diagnostic field views
+        if params.viewMode < 0.5 {
+            var pointAlpha = params.pointAlpha
+            var pointSize = params.pointSize
+            var count = UInt32(sim.particleCount)
+            enc.setRenderPipelineState(pointsPipe)
+            enc.setVertexBuffer(sim.particleBuffer, offset: 0, index: 0)
+            enc.setVertexBytes(&pointSize, length: 4, index: 1)
+            enc.setVertexBytes(&count, length: 4, index: 2)
+            enc.setFragmentBytes(&pointAlpha, length: 4, index: 0)
+            enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.particleCount)
+        }
 
         enc.endEncoding()
         cmd.present(drawable)

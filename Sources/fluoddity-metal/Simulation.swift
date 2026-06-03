@@ -30,11 +30,13 @@ final class Simulation {
     private var dyeTmp: MTLBuffer
     private(set) var dyeBlur: MTLBuffer        // blurred dye for the bloom glow
     private var blurTmp: MTLBuffer             // separable-blur scratch
+    private(set) var vort: MTLBuffer           // vorticity ω of the projected field
     let particleBuffer: MTLBuffer
     let ruleBuffer: MTLBuffer          // 20 float4: [0..9] freqs, [10..19] amps
 
     private let scalePipe, advectVelPipe, splatPipe, mouseStirPipe, divPipe,
-                jacobiPipe, subGradPipe, advectDyePipe, movePipe, blurPipe: MTLComputePipelineState
+                jacobiPipe, subGradPipe, advectDyePipe, movePipe, blurPipe,
+                vortPipe: MTLComputePipelineState
 
     private let dyeAmount: Float = 1.0     // not live-tuned
     var jacobiIters: Int = 30              // not live-tuned (changes encoder count)
@@ -58,6 +60,7 @@ final class Simulation {
         divg = zeroed(n)
         dye = zeroed(n); dyeTmp = zeroed(n)
         dyeBlur = zeroed(n); blurTmp = zeroed(n)
+        vort = zeroed(n)
 
         var particles = Simulation.seedParticles(count: particleCount)
         particleBuffer = device.makeBuffer(
@@ -87,6 +90,7 @@ final class Simulation {
         advectDyePipe = pipe("advect_dye")
         movePipe      = pipe("move_particles")
         blurPipe      = pipe("box_blur")
+        vortPipe      = pipe("vorticity")
     }
 
     func encode(into cmd: MTLCommandBuffer) {
@@ -162,6 +166,12 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 2)
         }
         swap(&vel, &velTmp)
+        // 7a. vorticity of the projected field (research-viz overlay)
+        field(cmd, vortPipe) { e in
+            e.setBuffer(self.vel, offset: 0, index: 0)
+            e.setBuffer(self.vort, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+        }
         // 7. advect dye by the projected field (+ decay)
         field(cmd, advectDyePipe) { e in
             e.setBuffer(self.dye, offset: 0, index: 0)
