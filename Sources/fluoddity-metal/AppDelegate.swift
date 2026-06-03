@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mtkView: EngineView!
     private var renderer: Renderer!
     private var controls: ControlsPanel!
+    private var hud: NSTextField!
     private let params = Params()
     private let mouse = MouseInput()
     private var tuning: Tuning!
@@ -50,6 +51,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controls.onReroll = { [weak self] in self?.renderer?.reroll() }
         controls.onSave   = { [weak self] in self?.savePreset() }
         controls.onLoad   = { [weak self] in self?.loadNextPreset() }
+
+        // research HUD (top-right): live E / Z / |ω|max / div readout
+        hud = NSTextField(frame: NSRect(x: frame.width - 392, y: frame.height - 34, width: 380, height: 22))
+        hud.isEditable = false
+        hud.isBordered = false
+        hud.drawsBackground = true
+        hud.backgroundColor = NSColor(white: 0, alpha: 0.45)
+        hud.textColor = NSColor(calibratedRed: 0.6, green: 0.9, blue: 1.0, alpha: 1)
+        hud.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        hud.alignment = .right
+        hud.autoresizingMask = [.minXMargin, .minYMargin]
+        container.addSubview(hud)
+        renderer.onDiagnostics = { [weak self] text in self?.hud.stringValue = text }
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],

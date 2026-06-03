@@ -11,6 +11,8 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let params: Params
     private let dyePipe: MTLRenderPipelineState
     private let pointsPipe: MTLRenderPipelineState
+    var onDiagnostics: ((String) -> Void)?     // HUD text sink (set by AppDelegate)
+    private var hudFrame = 0
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
         guard let q = device.makeCommandQueue() else {
@@ -55,12 +57,46 @@ final class Renderer: NSObject, MTKViewDelegate {
     func ruleSnapshot() -> [Float] { sim.ruleSnapshot() }
     func loadRule(_ floats: [Float]) { sim.loadRule(floats) }
 
+    // Full-field CPU reductions for the research HUD (caller throttles the rate):
+    // E = mean|u|², Z = mean ω² (enstrophy), |ω|max (intermittency), mean|div|
+    // (should sit near 0 — the incompressibility holding).
+    private func diagnostics() -> String {
+        let dim = Int(sim.dim.x)
+        let n = dim * dim
+        let v = sim.vel.contents().bindMemory(to: Float.self, capacity: 2 * n)
+        let w = sim.vort.contents().bindMemory(to: Float.self, capacity: n)
+        var energy: Float = 0, enstrophy: Float = 0, maxW: Float = 0, divAbs: Float = 0
+        for y in 0..<dim {
+            let yU = (y + 1) % dim, yD = (y + dim - 1) % dim
+            for x in 0..<dim {
+                let xR = (x + 1) % dim, xL = (x + dim - 1) % dim
+                let i = y * dim + x
+                let ux = v[2 * i], uy = v[2 * i + 1]
+                energy += ux * ux + uy * uy
+                let wi = w[i]
+                enstrophy += wi * wi
+                if abs(wi) > maxW { maxW = abs(wi) }
+                let dvg = 0.5 * ((v[2 * (y * dim + xR)] - v[2 * (y * dim + xL)])
+                               + (v[2 * (yU * dim + x) + 1] - v[2 * (yD * dim + x) + 1]))
+                divAbs += abs(dvg)
+            }
+        }
+        let nn = Float(n)
+        return String(format: "E %.3f    Z %.3f    |\u{03C9}|max %.2f    div %.4f",
+                      Double(energy / nn), Double(enstrophy / nn), Double(maxW), Double(divAbs / nn))
+    }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable,
               let rpd = view.currentRenderPassDescriptor,
               let cmd = queue.makeCommandBuffer() else { return }
+
+        // research-viz HUD: compute diagnostics a few times a second from the
+        // last completed frame's fields (before this frame's encode touches them)
+        hudFrame += 1
+        if hudFrame % 20 == 0 { onDiagnostics?(diagnostics()) }
 
         sim.encode(into: cmd)
 
