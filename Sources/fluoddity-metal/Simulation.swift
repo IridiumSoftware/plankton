@@ -167,16 +167,21 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 2)
         }
         swap(&vel, &velTmp)
-        // 7a. vorticity + divergence of the projected field (research-viz overlays)
-        field(cmd, vortPipe) { e in
-            e.setBuffer(self.vel, offset: 0, index: 0)
-            e.setBuffer(self.vort, offset: 0, index: 1)
-            e.setBytes(&dimv, length: 8, index: 2)
+        // 7a. vorticity + divergence of the projected field (only when shown/needed)
+        let vm = Int(params.viewMode + 0.5)
+        if params.diagnosticsOn || vm == 1 || vm == 2 {
+            field(cmd, vortPipe) { e in
+                e.setBuffer(self.vel, offset: 0, index: 0)
+                e.setBuffer(self.vort, offset: 0, index: 1)
+                e.setBytes(&dimv, length: 8, index: 2)
+            }
         }
-        field(cmd, divPipe) { e in
-            e.setBuffer(self.vel, offset: 0, index: 0)
-            e.setBuffer(self.divDisp, offset: 0, index: 1)
-            e.setBytes(&dimv, length: 8, index: 2)
+        if params.diagnosticsOn || vm == 3 {
+            field(cmd, divPipe) { e in
+                e.setBuffer(self.vel, offset: 0, index: 0)
+                e.setBuffer(self.divDisp, offset: 0, index: 1)
+                e.setBytes(&dimv, length: 8, index: 2)
+            }
         }
         // 7. advect dye by the projected field (+ decay)
         field(cmd, advectDyePipe) { e in

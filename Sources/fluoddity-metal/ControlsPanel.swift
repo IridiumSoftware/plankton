@@ -9,6 +9,7 @@ final class ControlsPanel: NSView {
     var onLoad: (() -> Void)?
     var onReset: (() -> Void)?
     var onReroll: (() -> Void)?
+    var onToggleDiag: ((Bool) -> Void)?
 
     private let params: Params
     private let knobs: [Knob]
@@ -31,14 +32,15 @@ final class ControlsPanel: NSView {
         layer?.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
         layer?.cornerRadius = 8
 
-        // button row (top)
-        let titles = ["Save", "Load", "Reset", "Brain"]
+        // button row (top): 4 actions + a Diag on/off toggle
+        let titles = ["Save", "Load", "Reset", "Brain", "Diag"]
         for (i, title) in titles.enumerated() {
             let b = NSButton(title: title, target: self, action: #selector(buttonClicked(_:)))
             b.bezelStyle = .rounded
             b.font = .systemFont(ofSize: 11)
             b.tag = i
-            b.frame = NSRect(x: 8 + CGFloat(i) * 79, y: height - pad - btnH + 2, width: 74, height: 24)
+            if i == 4 { b.setButtonType(.pushOnPushOff); b.state = .on }   // Diag toggle (on)
+            b.frame = NSRect(x: 8 + CGFloat(i) * 62, y: height - pad - btnH + 2, width: 58, height: 24)
             addSubview(b)
         }
 
@@ -96,6 +98,7 @@ final class ControlsPanel: NSView {
         case 1: onLoad?()
         case 2: onReset?()
         case 3: onReroll?()
+        case 4: onToggleDiag?(b.state == .on)
         default: break
         }
     }

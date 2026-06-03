@@ -52,6 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controls.onReroll = { [weak self] in self?.renderer?.reroll() }
         controls.onSave   = { [weak self] in self?.savePreset() }
         controls.onLoad   = { [weak self] in self?.loadNextPreset() }
+        controls.onToggleDiag = { [weak self] on in
+            guard let self else { return }
+            self.params.diagnosticsOn = on
+            self.hud.isHidden = !on
+            self.plot.isHidden = !on
+        }
 
         // research HUD (top-right): live E / Z / |ω|max / div readout
         hud = NSTextField(frame: NSRect(x: frame.width - 392, y: frame.height - 34, width: 380, height: 22))

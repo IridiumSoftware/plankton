@@ -69,22 +69,24 @@ final class Renderer: NSObject, MTKViewDelegate {
         let v = sim.vel.contents().bindMemory(to: Float.self, capacity: 2 * n)
         let w = sim.vort.contents().bindMemory(to: Float.self, capacity: n)
         var energy: Float = 0, enstrophy: Float = 0, maxW: Float = 0, divAbs: Float = 0
-        for y in 0..<dim {
+        let step = max(1, n / 65536)   // subsample ~64k cells to keep it light
+        var count = 0, i = 0
+        while i < n {
+            let x = i % dim, y = i / dim
+            let xR = (x + 1) % dim, xL = (x + dim - 1) % dim
             let yU = (y + 1) % dim, yD = (y + dim - 1) % dim
-            for x in 0..<dim {
-                let xR = (x + 1) % dim, xL = (x + dim - 1) % dim
-                let i = y * dim + x
-                let ux = v[2 * i], uy = v[2 * i + 1]
-                energy += ux * ux + uy * uy
-                let wi = w[i]
-                enstrophy += wi * wi
-                if abs(wi) > maxW { maxW = abs(wi) }
-                let dvg = 0.5 * ((v[2 * (y * dim + xR)] - v[2 * (y * dim + xL)])
-                               + (v[2 * (yU * dim + x) + 1] - v[2 * (yD * dim + x) + 1]))
-                divAbs += abs(dvg)
-            }
+            let ux = v[2 * i], uy = v[2 * i + 1]
+            energy += ux * ux + uy * uy
+            let wi = w[i]
+            enstrophy += wi * wi
+            if abs(wi) > maxW { maxW = abs(wi) }
+            let dvg = 0.5 * ((v[2 * (y * dim + xR)] - v[2 * (y * dim + xL)])
+                           + (v[2 * (yU * dim + x) + 1] - v[2 * (yD * dim + x) + 1]))
+            divAbs += abs(dvg)
+            count += 1
+            i += step
         }
-        let nn = Float(n)
+        let nn = Float(count)
         return Diag(e: energy / nn, z: enstrophy / nn, maxW: maxW, div: divAbs / nn)
     }
 
@@ -98,7 +100,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         // research-viz HUD: compute diagnostics a few times a second from the
         // last completed frame's fields (before this frame's encode touches them)
         hudFrame += 1
-        if hudFrame % 20 == 0 { onDiagnostics?(diagnostics()) }
+        if params.diagnosticsOn && hudFrame % 20 == 0 { onDiagnostics?(diagnostics()) }
 
         sim.encode(into: cmd)
 

@@ -25,8 +25,9 @@ final class Params {
     var palette: Float       = 0.0   // 0 dir-hue, 1 thermal, 2 teal
     var pointSize: Float     = 1.5   // agent dot base size
     var mutationStrength: Float = 0.3 // right-click breed: mutation amount
-    var viewMode: Float    = 0.0     // 0 dye art, 1 vorticity, 2 enstrophy
+    var viewMode: Float    = 0.0     // 0 dye art, 1 vorticity, 2 enstrophy, 3 divergence
     var vortScale: Float   = 3.0     // vorticity/enstrophy display scale
+    var diagnosticsOn = true         // research HUD + plot + field calcs (toggle off for perf)
 }
 
 // Mirrors `struct MoveParams` in Shaders.source (5 floats, 20 bytes).
