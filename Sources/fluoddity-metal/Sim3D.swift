@@ -26,9 +26,11 @@ final class Sim3D {
     private var pressure: MTLBuffer
     private var pressureTmp: MTLBuffer
     private let divg: MTLBuffer
+    private(set) var dye: MTLBuffer            // 3D density volume (rendered)
+    private var dyeTmp: MTLBuffer
 
     private let scalePipe, advectPipe, splatPipe, divPipe, jacobiPipe,
-                subPipe, movePipe: MTLComputePipelineState
+                subPipe, movePipe, advectDyePipe: MTLComputePipelineState
 
     var velDamp: Float = 0.96
     var forceGain: Float = 0.5
@@ -42,6 +44,8 @@ final class Sim3D {
     var axialForce: Float = 0.02
     var senseScale: Float = 3.0
     var planeSamples: Float = 2
+    var dyeDecay: Float = 0.985
+    var dyeAmount: Float = 1.0
     private var frame: UInt32 = 0
 
     init(device: MTLDevice, library: MTLLibrary, count: Int = 1 << 20, fieldDim: Int = 128) {
@@ -57,6 +61,7 @@ final class Sim3D {
         }
         vel = zeroed(3 * n3); velTmp = zeroed(3 * n3)
         pressure = zeroed(n3); pressureTmp = zeroed(n3); divg = zeroed(n3)
+        dye = zeroed(n3); dyeTmp = zeroed(n3)
 
         // particles: random position; velocity = ABC flow (persistent forcing)
         func abc(_ p: SIMD3<Float>) -> SIMD3<Float> {
@@ -88,6 +93,7 @@ final class Sim3D {
         scalePipe = pipe("scale3d"); advectPipe = pipe("advect3d"); splatPipe = pipe("splat3d")
         divPipe = pipe("divergence3d"); jacobiPipe = pipe("jacobi3d")
         subPipe = pipe("subgrad3d"); movePipe = pipe("move3d")
+        advectDyePipe = pipe("advectDye3d")
     }
 
     func encode(into cmd: MTLCommandBuffer) {
@@ -104,11 +110,14 @@ final class Sim3D {
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBytes(&velDampv, length: 4, index: 1)
         }
+        var dyeAmtv = dyeAmount
         particles(cmd, splatPipe) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
-            e.setBuffer(self.particleBuffer, offset: 0, index: 1)
-            e.setBytes(&dimv, length: 16, index: 2)
-            e.setBytes(&forceGainv, length: 4, index: 3)
+            e.setBuffer(self.dye, offset: 0, index: 1)
+            e.setBuffer(self.particleBuffer, offset: 0, index: 2)
+            e.setBytes(&dimv, length: 16, index: 3)
+            e.setBytes(&forceGainv, length: 4, index: 4)
+            e.setBytes(&dyeAmtv, length: 4, index: 5)
         }
         field(cmd, divPipe) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
@@ -130,6 +139,15 @@ final class Sim3D {
             e.setBytes(&dimv, length: 16, index: 2)
         }
         swap(&vel, &velTmp)
+        var dyeDecayv = dyeDecay
+        field(cmd, advectDyePipe) { e in
+            e.setBuffer(self.dye, offset: 0, index: 0)
+            e.setBuffer(self.dyeTmp, offset: 0, index: 1)
+            e.setBuffer(self.vel, offset: 0, index: 2)
+            e.setBytes(&dimv, length: 16, index: 3)
+            e.setBytes(&dyeDecayv, length: 4, index: 4)
+        }
+        swap(&dye, &dyeTmp)
         frame &+= 1
         var framev = frame
         var mp = MoveParams3GPU(swim: swim, sensorDist: sensorDist, sensorAngle: sensorAngle,

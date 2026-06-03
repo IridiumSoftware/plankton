@@ -40,6 +40,14 @@ enum Shaders3D {
         for (int i = 0; i < 10; i++) acc += rule[10 + i] * sin(dot(rule[i], x));
         return acc;
     }
+    static inline float sampleScalar3(device const float *s, float3 p, uint3 d) {
+        float3 fl = floor(p); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z); float3 t = p - fl;
+        float c00 = mix(s[idx3(x0,y0,z0,d)],     s[idx3(x0+1,y0,z0,d)],     t.x);
+        float c10 = mix(s[idx3(x0,y0+1,z0,d)],   s[idx3(x0+1,y0+1,z0,d)],   t.x);
+        float c01 = mix(s[idx3(x0,y0,z0+1,d)],   s[idx3(x0+1,y0,z0+1,d)],   t.x);
+        float c11 = mix(s[idx3(x0,y0+1,z0+1,d)], s[idx3(x0+1,y0+1,z0+1,d)], t.x);
+        return mix(mix(c00, c10, t.y), mix(c01, c11, t.y), t.z);
+    }
 
     kernel void scale3d(device float *buf [[buffer(0)]], constant float &k [[buffer(1)]],
                         uint i [[thread_position_in_grid]]) { buf[i] *= k; }
@@ -54,9 +62,13 @@ enum Shaders3D {
         vout[3 * i] = sv.x; vout[3 * i + 1] = sv.y; vout[3 * i + 2] = sv.z;
     }
 
-    // 2. splat agent velocities (trilinear, atomic)
-    kernel void splat3d(device atomic_float *vel [[buffer(0)]], device const Particle3D *parts [[buffer(1)]],
-                        constant uint3 &d [[buffer(2)]], constant float &gain [[buffer(3)]],
+    // 2. splat agent velocities (forcing) + dye (volume density), trilinear atomic
+    kernel void splat3d(device atomic_float *vel  [[buffer(0)]],
+                        device atomic_float *dye   [[buffer(1)]],
+                        device const Particle3D *parts [[buffer(2)]],
+                        constant uint3 &d          [[buffer(3)]],
+                        constant float &gain       [[buffer(4)]],
+                        constant float &dyeAmt     [[buffer(5)]],
                         uint gid [[thread_position_in_grid]]) {
         Particle3D p = parts[gid];
         float3 cell = p.pos * float3(d) - 0.5;
@@ -70,7 +82,18 @@ enum Shaders3D {
             atomic_fetch_add_explicit(&vel[3 * c],     f.x * w, memory_order_relaxed);
             atomic_fetch_add_explicit(&vel[3 * c + 1], f.y * w, memory_order_relaxed);
             atomic_fetch_add_explicit(&vel[3 * c + 2], f.z * w, memory_order_relaxed);
+            atomic_fetch_add_explicit(&dye[c],         dyeAmt * w, memory_order_relaxed);
         }
+    }
+
+    // dye advection by the projected field (+ decay)
+    kernel void advectDye3d(device const float *din [[buffer(0)]], device float *dout [[buffer(1)]],
+                            device const float *v [[buffer(2)]], constant uint3 &d [[buffer(3)]],
+                            constant float &decay [[buffer(4)]], uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        float3 vel = float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+        dout[i] = sampleScalar3(din, float3(gid) + 0.5 - vel, d) * decay;
     }
 
     // 3. divergence
@@ -179,6 +202,47 @@ enum Shaders3D {
         float t = clamp(in.speed * 4.0, 0.0, 1.0);
         float3 col = mix(float3(0.2, 0.5, 1.0), float3(1.0, 0.7, 0.3), t);
         return float4(col * a, a);
+    }
+
+    // ── volumetric ray-march of the dye field (Stage 3) ───────────────────
+    struct RMOut { float4 position [[position]]; float2 uv; };
+    vertex RMOut raymarch_vertex(uint vid [[vertex_id]]) {
+        float2 uv = float2((vid << 1) & 2, vid & 2);
+        RMOut o; o.position = float4(uv * 2.0 - 1.0, 0.0, 1.0); o.uv = uv; return o;
+    }
+    fragment float4 raymarch_fragment(RMOut in                    [[stage_in]],
+                                      device const float *dye      [[buffer(0)]],
+                                      constant uint3 &d            [[buffer(1)]],
+                                      constant float4x4 &invVP     [[buffer(2)]],
+                                      constant float &densityScale [[buffer(3)]]) {
+        float3 bg = float3(0.02, 0.02, 0.05);
+        float2 ndc = in.uv * 2.0 - 1.0;
+        float4 nh = invVP * float4(ndc, 0.0, 1.0);
+        float4 fh = invVP * float4(ndc, 1.0, 1.0);
+        float3 ro = nh.xyz / nh.w;
+        float3 rd = normalize(fh.xyz / fh.w - ro);
+        float3 invd = 1.0 / rd;
+        float3 t0 = (float3(0.0) - ro) * invd, t1 = (float3(1.0) - ro) * invd;
+        float3 tmn = min(t0, t1), tmx = max(t0, t1);
+        float tn = max(max(tmn.x, tmn.y), tmn.z);
+        float tf = min(min(tmx.x, tmx.y), tmx.z);
+        if (tf <= max(tn, 0.0)) return float4(bg, 1.0);
+        tn = max(tn, 0.0);
+        const int STEPS = 96;
+        float dt = (tf - tn) / float(STEPS);
+        float3 acc = float3(0.0); float trans = 1.0;
+        for (int i = 0; i < STEPS; i++) {
+            float3 pos = ro + (tn + (float(i) + 0.5) * dt) * rd;
+            float dens = sampleScalar3(dye, pos * float3(d), d) * densityScale;
+            if (dens > 0.002) {
+                float a = 1.0 - exp(-dens * dt * 25.0);
+                float3 emit = mix(float3(0.1, 0.4, 0.9), float3(1.0, 0.6, 0.2), clamp(dens, 0.0, 1.0));
+                acc += trans * a * emit;
+                trans *= 1.0 - a;
+                if (trans < 0.01) break;
+            }
+        }
+        return float4(acc + bg * trans, 1.0);
     }
     """
 }

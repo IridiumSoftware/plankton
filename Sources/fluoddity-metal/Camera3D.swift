@@ -18,6 +18,8 @@ final class Camera3D {
         return proj * view
     }
 
+    func invViewProj() -> float4x4 { viewProj().inverse }
+
     static func perspective(_ fovy: Float, _ aspect: Float, _ near: Float, _ far: Float) -> float4x4 {
         let ys = 1 / tan(fovy * 0.5)
         let xs = ys / aspect

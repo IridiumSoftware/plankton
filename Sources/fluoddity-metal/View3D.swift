@@ -4,11 +4,17 @@ import MetalKit
 final class View3D: MTKView {
     var camera: Camera3D?
     var onReroll: (() -> Void)?
+    var onDensity: ((Float) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
     override func keyDown(with e: NSEvent) {
-        if e.charactersIgnoringModifiers == "r" { onReroll?() }
+        switch e.charactersIgnoringModifiers {
+        case "r": onReroll?()
+        case "[": onDensity?(0.83)   // dimmer volume
+        case "]": onDensity?(1.2)    // denser volume
+        default: break
+        }
     }
 
     override func mouseDragged(with e: NSEvent) {

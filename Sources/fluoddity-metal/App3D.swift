@@ -22,6 +22,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         view.delegate = renderer
         view.camera = renderer.camera
         view.onReroll = { [weak self] in self?.renderer.reroll() }
+        view.onDensity = { [weak self] f in self?.renderer.adjustDensity(f) }
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
