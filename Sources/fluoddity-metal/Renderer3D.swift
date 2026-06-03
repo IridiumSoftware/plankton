@@ -32,6 +32,8 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         super.init()
     }
 
+    func reroll() { sim.rerollRule() }
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         camera.aspect = Float(size.width / max(size.height, 1))
     }

@@ -3,8 +3,13 @@ import MetalKit
 // MTKView for the 3D viewport: mouse-drag orbits the camera, scroll zooms.
 final class View3D: MTKView {
     var camera: Camera3D?
+    var onReroll: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with e: NSEvent) {
+        if e.charactersIgnoringModifiers == "r" { onReroll?() }
+    }
 
     override func mouseDragged(with e: NSEvent) {
         guard let c = camera else { return }

@@ -21,6 +21,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         renderer = Renderer3D(device: device, pixelFormat: view.colorPixelFormat)
         view.delegate = renderer
         view.camera = renderer.camera
+        view.onReroll = { [weak self] in self?.renderer.reroll() }
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],

@@ -14,6 +14,8 @@ enum Shaders3D {
     using namespace metal;
 
     struct Particle3D { float3 pos; float3 vel; };
+    struct MoveParams3 { float swim; float sensorDist; float sensorAngle; float turn; float axialForce; float fluidPull; float senseScale; float planeSamples; };
+    constant float AGENT_DT3 = 0.0167;
 
     static inline int wrp(int a, int n) { return ((a % n) + n) % n; }
     static inline uint idx3(int x, int y, int z, uint3 d) {
@@ -30,6 +32,13 @@ enum Shaders3D {
         float3 c01 = mix(vat(v, x0, y0, z0 + 1, d), vat(v, x0 + 1, y0, z0 + 1, d), t.x);
         float3 c11 = mix(vat(v, x0, y0 + 1, z0 + 1, d), vat(v, x0 + 1, y0 + 1, z0 + 1, d), t.x);
         return mix(mix(c00, c10, t.y), mix(c01, c11, t.y), t.z);
+    }
+    static inline float hashf(float x) { return fract(sin(x) * 43758.5453); }
+    // 80-param symmetric brain (2D): 10 Fourier centers, 4D→4D sum of sines.
+    static inline float4 fourier3(device const float4 *rule, float4 x) {
+        float4 acc = float4(0.0);
+        for (int i = 0; i < 10; i++) acc += rule[10 + i] * sin(dot(rule[i], x));
+        return acc;
     }
 
     kernel void scale3d(device float *buf [[buffer(0)]], constant float &k [[buffer(1)]],
@@ -99,13 +108,56 @@ enum Shaders3D {
         v[3 * i + 2] -= 0.5 * (p[idx3(x, y, z + 1, d)] - p[idx3(x, y, z - 1, d)]);
     }
 
-    // 6. agents ride the projected field (Stage 2a: pure tracers; brain in 2b)
-    kernel void move3d(device Particle3D *parts [[buffer(0)]], device const float *v [[buffer(1)]],
-                       constant uint3 &d [[buffer(2)]], constant float &fluidPull [[buffer(3)]],
+    // 6. agents: Monte-Carlo tangent-plane Fourier brain → steer in 3D + ride.
+    //    Sample random planes that contain vel; run the 2D mirror-averaged brain
+    //    on the flow projected into each plane; average the in-plane force into 3D.
+    kernel void move3d(device Particle3D *parts   [[buffer(0)]],
+                       device const float *v       [[buffer(1)]],
+                       constant uint3 &d           [[buffer(2)]],
+                       constant MoveParams3 &mp    [[buffer(3)]],
+                       device const float4 *rule   [[buffer(4)]],
+                       constant uint &frame        [[buffer(5)]],
                        uint gid [[thread_position_in_grid]]) {
         Particle3D p = parts[gid];
-        float3 fv = sampleVel3(v, p.pos * float3(d), d);   // cells/frame
-        p.pos = fract(p.pos + (fv / float3(d)) * fluidPull);
+        float3 dd = float3(d);
+        float speed = length(p.vel);
+        float3 fwd = speed > 1e-6 ? p.vel / speed : float3(1.0, 0.0, 0.0);
+
+        // orthonormal basis perpendicular to fwd
+        float3 a = abs(fwd.y) < 0.99 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+        float3 perp1 = normalize(cross(fwd, a));
+        float3 perp2 = cross(fwd, perp1);
+
+        float ca = cos(mp.sensorAngle), sa = sin(mp.sensorAngle);
+        int nS = max(1, int(mp.planeSamples));
+        float3 force = float3(0.0);
+        for (int s = 0; s < nS; s++) {
+            // random in-plane lateral axis w (the plane is span{fwd, w})
+            float theta = hashf(float(gid) * 0.0007 + float(s) * 7.13 + float(frame) * 0.0173) * 6.2831853;
+            float3 w = perp1 * cos(theta) + perp2 * sin(theta);
+
+            float3 ldir = fwd * ca + w * sa;
+            float3 rdir = fwd * ca - w * sa;
+            float3 vL = sampleVel3(v, (p.pos + ldir * mp.sensorDist) * dd, d);
+            float3 vR = sampleVel3(v, (p.pos + rdir * mp.sensorDist) * dd, d);
+            float2 L = float2(dot(vL, fwd), dot(vL, w)) * mp.senseScale;
+            float2 R = float2(dot(vR, fwd), dot(vR, w)) * mp.senseScale;
+
+            float4 base = fourier3(rule, float4(L.x, L.y, R.x, R.y));
+            float4 mir  = fourier3(rule, float4(R.x, -R.y, L.x, -L.y));
+            float axial = base.x + mir.x;       // reflection-even
+            float turnT = base.y - mir.y;       // reflection-odd (no handedness)
+            force += fwd * (axial * mp.axialForce) + w * (turnT * mp.turn);
+        }
+        force /= float(nS);
+
+        float3 nv = p.vel + force;
+        float ns = length(nv);
+        nv = ns > 1e-6 ? nv / ns * clamp(ns, mp.swim * 0.3, mp.swim * 2.0) : fwd * mp.swim;
+        p.vel = nv;                              // brain-steered velocity = fluid forcing
+
+        float3 fv = sampleVel3(v, p.pos * dd, d);
+        p.pos = fract(p.pos + p.vel * AGENT_DT3 + (fv / dd) * mp.fluidPull);
         parts[gid] = p;
     }
 
