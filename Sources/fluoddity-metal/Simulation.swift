@@ -17,6 +17,7 @@ final class Simulation {
     let particleCount: Int
     let dim: SIMD2<UInt32>
     private let params: Params
+    private let mouse: MouseInput
 
     private(set) var vel: MTLBuffer
     private var velTmp: MTLBuffer
@@ -27,15 +28,16 @@ final class Simulation {
     private var dyeTmp: MTLBuffer
     let particleBuffer: MTLBuffer
 
-    private let scalePipe, advectVelPipe, splatPipe, divPipe, jacobiPipe,
-                subGradPipe, advectDyePipe, movePipe: MTLComputePipelineState
+    private let scalePipe, advectVelPipe, splatPipe, mouseStirPipe, divPipe,
+                jacobiPipe, subGradPipe, advectDyePipe, movePipe: MTLComputePipelineState
 
     private let dyeAmount: Float = 1.0     // not live-tuned
     var jacobiIters: Int = 30              // not live-tuned (changes encoder count)
 
-    init(device: MTLDevice, library: MTLLibrary, params: Params,
+    init(device: MTLDevice, library: MTLLibrary, params: Params, mouse: MouseInput,
          particleCount: Int = 1 << 20, fieldDim: Int = 1024) {
         self.params = params
+        self.mouse = mouse
         self.particleCount = particleCount
         self.dim = SIMD2<UInt32>(UInt32(fieldDim), UInt32(fieldDim))
         let n = fieldDim * fieldDim
@@ -89,6 +91,7 @@ final class Simulation {
         scalePipe     = pipe("scale_buffer")
         advectVelPipe = pipe("advect_velocity")
         splatPipe     = pipe("splat")
+        mouseStirPipe = pipe("mouse_stir")
         divPipe       = pipe("divergence")
         jacobiPipe    = pipe("jacobi")
         subGradPipe   = pipe("subtract_gradient")
@@ -126,6 +129,19 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 3)
             e.setBytes(&forceGainv, length: 4, index: 4)
             e.setBytes(&dyeAmtv, length: 4, index: 5)
+        }
+        // 3b. mouse stir (force + dye), only while dragging
+        if mouse.active {
+            var mu = MouseUniformGPU(pos: mouse.posN, vel: mouse.velN,
+                                     radius: params.mouseRadius, forceGain: params.mouseForce,
+                                     dyeGain: params.mouseDye, active: 1)
+            field(cmd, mouseStirPipe) { e in
+                e.setBuffer(self.velTmp, offset: 0, index: 0)
+                e.setBuffer(self.dye, offset: 0, index: 1)
+                e.setBytes(&dimv, length: 8, index: 2)
+                e.setBytes(&mu, length: MemoryLayout<MouseUniformGPU>.stride, index: 3)
+            }
+            mouse.velN = .zero
         }
         // 4. divergence(velTmp → divg)
         field(cmd, divPipe) { e in

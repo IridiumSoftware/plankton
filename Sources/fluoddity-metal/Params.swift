@@ -15,6 +15,9 @@ final class Params {
     var forceGain: Float   = 0.5     // agent velocity → fluid forcing
     var pointAlpha: Float  = 0.10    // agent dot brightness
     var satGain: Float     = 0.7     // flow speed → color saturation
+    var mouseForce: Float  = 0.15    // mouse-drag stir strength
+    var mouseDye: Float    = 6.0     // mouse dye injection
+    var mouseRadius: Float = 0.045   // mouse brush radius
 }
 
 // Mirrors `struct MoveParams` in Shaders.source (5 floats, 20 bytes).
@@ -48,4 +51,7 @@ let engineKnobs: [Knob] = [
     Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05),
     Knob(name: "pointAlpha",  kp: \.pointAlpha,  lo: 0.0,   hi: 1.0,   step: 0.02),
     Knob(name: "satGain",     kp: \.satGain,     lo: 0.0,   hi: 3.0,   step: 0.05),
+    Knob(name: "mouseForce",  kp: \.mouseForce,  lo: 0.0,   hi: 1.0,   step: 0.02),
+    Knob(name: "mouseDye",    kp: \.mouseDye,    lo: 0.0,   hi: 20.0,  step: 0.5),
+    Knob(name: "mouseRadius", kp: \.mouseRadius, lo: 0.01,  hi: 0.20,  step: 0.005),
 ]

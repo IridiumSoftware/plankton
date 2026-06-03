@@ -12,7 +12,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let dyePipe: MTLRenderPipelineState
     private let pointsPipe: MTLRenderPipelineState
 
-    init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params) {
+    init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
         guard let q = device.makeCommandQueue() else {
             fatalError("could not create command queue")
         }
@@ -25,7 +25,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         } catch {
             fatalError("MSL compile failed: \(error)")
         }
-        self.sim = Simulation(device: device, library: library, params: params)
+        self.sim = Simulation(device: device, library: library, params: params, mouse: mouse)
 
         let ddesc = MTLRenderPipelineDescriptor()
         ddesc.vertexFunction = library.makeFunction(name: "fs_vertex")

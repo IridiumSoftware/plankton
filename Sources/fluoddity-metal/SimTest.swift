@@ -24,7 +24,7 @@ func runSimTest() {
 
     let dim = 256
     let sim = Simulation(device: device, library: library, params: Params(),
-                         particleCount: 1 << 18, fieldDim: dim)
+                         mouse: MouseInput(), particleCount: 1 << 18, fieldDim: dim)
     guard let queue = device.makeCommandQueue() else { fatalError("no command queue") }
 
     let steps = 120

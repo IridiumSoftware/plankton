@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var renderer: Renderer!
     private var controls: ControlsPanel!
     private let params = Params()
+    private let mouse = MouseInput()
     private var tuning: Tuning!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -28,8 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         tuning = Tuning(params: params)
         mtkView.onKey = { [weak self] key in self?.tuning.handleKey(key) }
+        mtkView.mouseInput = mouse
 
-        renderer = Renderer(device: device, pixelFormat: mtkView.colorPixelFormat, params: params)
+        renderer = Renderer(device: device, pixelFormat: mtkView.colorPixelFormat,
+                            params: params, mouse: mouse)
         mtkView.delegate = renderer
         container.addSubview(mtkView)
 

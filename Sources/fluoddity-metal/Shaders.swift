@@ -20,6 +20,7 @@ enum Shaders {
 
     struct Particle { float2 pos; float2 vel; };
     struct MoveParams { float swim; float sensorDist; float sensorAngle; float turn; float fluidPull; };
+    struct MouseUniform { float2 pos; float2 vel; float radius; float forceGain; float dyeGain; float active; };
 
     // fixed (non-live) constants
     constant float AGENT_DT   = 0.0167;   // agent step (≈1/60)
@@ -98,6 +99,24 @@ enum Shaders {
                 atomic_fetch_add_explicit(&dye[c],         dyeAmt * w, memory_order_relaxed);
             }
         }
+    }
+
+    // ── 2b. mouse stir: add a Gaussian blob of velocity + dye at the cursor ─
+    kernel void mouse_stir(device float *vel       [[buffer(0)]],
+                           device float *dye         [[buffer(1)]],
+                           constant uint2 &d         [[buffer(2)]],
+                           constant MouseUniform &m  [[buffer(3)]],
+                           uint2 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y) return;
+        float2 cell = float2(float(gid.x) + 0.5, float(gid.y) + 0.5);
+        float2 mc = m.pos * float2(d);
+        float2 diff = (cell - mc) / max(m.radius * float(d.x), 1.0);
+        float g = exp(-dot(diff, diff));
+        if (g < 0.003) return;
+        uint i = gid.y * d.x + gid.x;
+        vel[2 * i]     += m.vel.x * float(d.x) * m.forceGain * g;
+        vel[2 * i + 1] += m.vel.y * float(d.x) * m.forceGain * g;
+        dye[i]         += m.dyeGain * g;
     }
 
     // ── 3. divergence ─────────────────────────────────────────────────────
