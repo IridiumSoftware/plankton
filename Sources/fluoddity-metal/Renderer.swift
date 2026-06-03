@@ -86,9 +86,11 @@ final class Renderer: NSObject, MTKViewDelegate {
 
         var pointAlpha = params.pointAlpha
         var pointSize = params.pointSize
+        var count = UInt32(sim.particleCount)
         enc.setRenderPipelineState(pointsPipe)
         enc.setVertexBuffer(sim.particleBuffer, offset: 0, index: 0)
         enc.setVertexBytes(&pointSize, length: 4, index: 1)
+        enc.setVertexBytes(&count, length: 4, index: 2)
         enc.setFragmentBytes(&pointAlpha, length: 4, index: 0)
         enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.particleCount)
 

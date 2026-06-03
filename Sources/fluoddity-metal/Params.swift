@@ -23,6 +23,7 @@ final class Params {
     var bloomStrength: Float = 0.6   // bloom glow intensity
     var palette: Float       = 0.0   // 0 dir-hue, 1 thermal, 2 teal
     var pointSize: Float     = 1.5   // agent dot base size
+    var mutationStrength: Float = 0.3 // right-click breed: mutation amount
 }
 
 // Mirrors `struct MoveParams` in Shaders.source (5 floats, 20 bytes).
@@ -66,4 +67,5 @@ let engineKnobs: [Knob] = [
     Knob(name: "bloomStrength", kp: \.bloomStrength, lo: 0.0, hi: 3.0, step: 0.05),
     Knob(name: "palette",     kp: \.palette,     lo: 0.0,   hi: 2.0,   step: 1.0),
     Knob(name: "pointSize",   kp: \.pointSize,   lo: 0.0,   hi: 6.0,   step: 0.5),
+    Knob(name: "mutationStrength", kp: \.mutationStrength, lo: 0.0, hi: 1.5, step: 0.05),
 ]

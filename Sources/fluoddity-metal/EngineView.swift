@@ -35,4 +35,10 @@ final class EngineView: MTKView {
     override func mouseUp(with event: NSEvent) {
         mouseInput?.active = false
     }
+
+    // right-click selects the cohort under the cursor and breeds from it
+    override func rightMouseDown(with event: NSEvent) {
+        mouseInput?.breedPos = normPos(event)
+        mouseInput?.breedRequested = true
+    }
 }

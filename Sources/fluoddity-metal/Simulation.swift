@@ -14,6 +14,8 @@ struct Particle {
 // Live tunables are read from `params` each frame. Each pass is its own
 // encoder; Metal's hazard tracking serializes them.
 final class Simulation {
+    static let nCohorts = 8        // sub-populations; matches N_COHORTS in Shaders
+
     let particleCount: Int
     let dim: SIMD2<UInt32>
     private let params: Params
@@ -66,7 +68,7 @@ final class Simulation {
         var rule = Simulation.randomRule()
         ruleBuffer = device.makeBuffer(
             bytes: &rule,
-            length: 20 * MemoryLayout<SIMD4<Float>>.stride,
+            length: rule.count * MemoryLayout<SIMD4<Float>>.stride,
             options: .storageModeShared)!
 
         func pipe(_ name: String) -> MTLComputePipelineState {
@@ -88,8 +90,13 @@ final class Simulation {
     }
 
     func encode(into cmd: MTLCommandBuffer) {
+        if mouse.breedRequested {
+            breedAt(mouse.breedPos)
+            mouse.breedRequested = false
+        }
         let n = Int(dim.x) * Int(dim.y)
         var dimv = dim
+        var countv = UInt32(particleCount)
         var velDampv = params.velDamp
         var forceGainv = params.forceGain
         var dyeAmtv = dyeAmount
@@ -188,32 +195,24 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 2)
             e.setBytes(&mp, length: MemoryLayout<MoveParamsGPU>.stride, index: 3)
             e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
+            e.setBytes(&countv, length: 4, index: 5)
         }
     }
 
-    // Particles at random positions with velocities from a few overlaid Gaussian
-    // vortices, so the opening / post-reset flow is visibly swirling.
+    // Particles seeded into per-cohort tiles (so the sub-populations start
+    // spatially separated for selection), with small random headings.
     static func seedParticles(count: Int) -> [Particle] {
-        struct Vortex { var c: SIMD2<Float>; var s: Float; var r: Float }
         var rng = SystemRandomNumberGenerator()
-        var vortices = [Vortex]()
-        for _ in 0..<6 {
-            vortices.append(Vortex(
-                c: SIMD2(Float.random(in: 0..<1, using: &rng), Float.random(in: 0..<1, using: &rng)),
-                s: Float.random(in: -1..<1, using: &rng),
-                r: Float.random(in: 0.12..<0.30, using: &rng)))
-        }
+        let cols = 4, rows = max(1, (nCohorts + cols - 1) / cols)   // 8 → 4×2
         var particles = [Particle](); particles.reserveCapacity(count)
-        for _ in 0..<count {
-            let pos = SIMD2(Float.random(in: 0..<1, using: &rng),
-                            Float.random(in: 0..<1, using: &rng))
-            var v = SIMD2<Float>(0, 0)
-            for vt in vortices {
-                let dvec = pos - vt.c
-                let fall = exp(-simd_length_squared(dvec) / (vt.r * vt.r))
-                v += vt.s * SIMD2(-dvec.y, dvec.x) * fall
-            }
-            particles.append(Particle(pos: pos, vel: v * 0.12))
+        for i in 0..<count {
+            let cohort = (i * nCohorts) / count
+            let tx = cohort % cols, ty = cohort / cols
+            let px = (Float(tx) + Float.random(in: 0.05..<0.95, using: &rng)) / Float(cols)
+            let py = (Float(ty) + Float.random(in: 0.05..<0.95, using: &rng)) / Float(rows)
+            let ang = Float.random(in: 0..<(2 * .pi), using: &rng)
+            particles.append(Particle(pos: SIMD2(px, py),
+                                      vel: SIMD2(cos(ang), sin(ang)) * 0.08))
         }
         return particles
     }
@@ -229,37 +228,70 @@ final class Simulation {
         print("reset")
     }
 
-    // Read / write the 80-float brain (for presets).
+    // Read / write all cohort brains (for presets).
     func ruleSnapshot() -> [Float] {
-        let p = ruleBuffer.contents().bindMemory(to: Float.self, capacity: 80)
-        return Array(UnsafeBufferPointer(start: p, count: 80))
+        let n = Simulation.nCohorts * 80
+        let p = ruleBuffer.contents().bindMemory(to: Float.self, capacity: n)
+        return Array(UnsafeBufferPointer(start: p, count: n))
     }
     func loadRule(_ floats: [Float]) {
-        guard floats.count == 80 else { return }
+        let n = Simulation.nCohorts * 80
+        guard floats.count == n else { return }
         var f = floats
-        memcpy(ruleBuffer.contents(), &f, 80 * MemoryLayout<Float>.stride)
+        memcpy(ruleBuffer.contents(), &f, n * MemoryLayout<Float>.stride)
     }
 
-    // Generate a fresh random brain (10 freq float4 + 10 amp float4).
+    // Generate nCohorts fresh random brains (each: 10 freq float4 + 10 amp float4).
     static func randomRule() -> [SIMD4<Float>] {
         var rng = SystemRandomNumberGenerator()
-        var r = [SIMD4<Float>]()
-        for _ in 0..<10 {
-            r.append(SIMD4(Float.random(in: -2...2, using: &rng), Float.random(in: -2...2, using: &rng),
-                           Float.random(in: -2...2, using: &rng), Float.random(in: -2...2, using: &rng)))
+        func rand4(_ lo: Float, _ hi: Float) -> SIMD4<Float> {
+            SIMD4(Float.random(in: lo...hi, using: &rng), Float.random(in: lo...hi, using: &rng),
+                  Float.random(in: lo...hi, using: &rng), Float.random(in: lo...hi, using: &rng))
         }
-        for _ in 0..<10 {
-            r.append(SIMD4(Float.random(in: -1...1, using: &rng), Float.random(in: -1...1, using: &rng),
-                           Float.random(in: -1...1, using: &rng), Float.random(in: -1...1, using: &rng)))
+        var r = [SIMD4<Float>]()
+        for _ in 0..<nCohorts {
+            for _ in 0..<10 { r.append(rand4(-2, 2)) }   // frequencies
+            for _ in 0..<10 { r.append(rand4(-1, 1)) }   // amplitudes
         }
         return r
     }
 
-    // Re-roll the global brain in place (bound to the `r` key).
+    // Re-roll all cohort brains in place (bound to the `r` key / Brain button).
     func rerollRule() {
         var r = Simulation.randomRule()
-        memcpy(ruleBuffer.contents(), &r, 20 * MemoryLayout<SIMD4<Float>>.stride)
-        print("brain re-rolled")
+        memcpy(ruleBuffer.contents(), &r, r.count * MemoryLayout<SIMD4<Float>>.stride)
+        print("brains re-rolled")
+    }
+
+    // Right-click breed: vote the dominant cohort near `clickPos`, then set every
+    // cohort to a mutation of it (cohort 0 = exact parent). All CPU (shared bufs).
+    func breedAt(_ clickPos: SIMD2<Float>) {
+        let nc = Simulation.nCohorts
+        let p = particleBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
+        var votes = [Int](repeating: 0, count: nc)
+        let radius2: Float = 0.10 * 0.10
+        let stepN = max(1, particleCount / 200_000)   // subsample for speed
+        var i = 0
+        while i < particleCount {
+            if simd_length_squared(p[i].pos - clickPos) < radius2 {
+                votes[(i * nc) / particleCount] += 1
+            }
+            i += stepN
+        }
+        guard let parent = votes.indices.max(by: { votes[$0] < votes[$1] }),
+              votes[parent] > 0 else { print("breed: no agents near click"); return }
+
+        let rf = ruleBuffer.contents().bindMemory(to: Float.self, capacity: nc * 80)
+        let parentRule = Array(UnsafeBufferPointer(start: rf + parent * 80, count: 80))
+        var rng = SystemRandomNumberGenerator()
+        let m = params.mutationStrength
+        for c in 0..<nc {
+            for k in 0..<80 {
+                rf[c * 80 + k] = (c == 0) ? parentRule[k]
+                    : parentRule[k] + Float.random(in: -m...m, using: &rng)
+            }
+        }
+        print("bred from cohort \(parent) (\(votes[parent]) votes)")
     }
 
     // ── encoder helpers ─────────────────────────────────────────────────

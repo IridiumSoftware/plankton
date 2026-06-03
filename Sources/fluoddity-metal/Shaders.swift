@@ -189,10 +189,13 @@ enum Shaders {
 
     // 80-param symmetric brain: 10 Fourier centers (rule[0..9] = frequencies,
     // rule[10..19] = amplitudes), a 4D→4D sum of sines.  out = Σ amp·sin(freq·x).
-    static inline float4 fourier(device const float4 *rule, float4 x) {
+    constant int N_COHORTS = 8;   // sub-populations, each with its own 80-param rule
+
+    // `off` selects the cohort's block (cohort * 20 float4 = freqs[10] + amps[10]).
+    static inline float4 fourier(device const float4 *rule, uint off, float4 x) {
         float4 acc = float4(0.0);
         for (int i = 0; i < 10; i++) {
-            acc += rule[10 + i] * sin(dot(rule[i], x));
+            acc += rule[off + 10 + i] * sin(dot(rule[off + i], x));
         }
         return acc;
     }
@@ -204,8 +207,10 @@ enum Shaders {
                                constant uint2 &d            [[buffer(2)]],
                                constant MoveParams &mp      [[buffer(3)]],
                                device const float4 *rule    [[buffer(4)]],
+                               constant uint &count         [[buffer(5)]],
                                uint gid [[thread_position_in_grid]]) {
         Particle p = parts[gid];
+        uint off = ((gid * uint(N_COHORTS)) / count) * 20;   // this agent's cohort block
         float2 dd = float2(d);
         float spd = length(p.vel);
         float2 fwd = spd > 1e-6 ? p.vel / spd : float2(1.0, 0.0);
@@ -220,8 +225,8 @@ enum Shaders {
 
         // evaluate twice, mirrored, and combine: axial reflection-even,
         // turn reflection-odd (keeps the rule free of clockwise/ccw bias)
-        float4 base = fourier(rule, float4(L.x, L.y, R.x, R.y));
-        float4 mir  = fourier(rule, float4(R.x, -R.y, L.x, -L.y));
+        float4 base = fourier(rule, off, float4(L.x, L.y, R.x, R.y));
+        float4 mir  = fourier(rule, off, float4(R.x, -R.y, L.x, -L.y));
         float axial = base.x + mir.x;
         float turnT = base.y - mir.y;
 
@@ -294,13 +299,15 @@ enum Shaders {
     struct PointOut { float4 position [[position]]; float pointSize [[point_size]]; float hue; };
     vertex PointOut point_vertex(uint vid                  [[vertex_id]],
                                  device const Particle *parts [[buffer(0)]],
-                                 constant float &pointSize    [[buffer(1)]]) {
+                                 constant float &pointSize    [[buffer(1)]],
+                                 constant uint &count         [[buffer(2)]]) {
         Particle p = parts[vid];
         float spd = length(p.vel);
+        uint cohort = (vid * uint(N_COHORTS)) / count;
         PointOut o;
         o.position = float4(p.pos * 2.0 - 1.0, 0.0, 1.0);
         o.pointSize = pointSize * (1.0 + spd * 4.0);
-        o.hue = atan2(p.vel.y, p.vel.x) / 6.283185 + 0.5;
+        o.hue = float(cohort) / float(N_COHORTS);          // tint by cohort
         return o;
     }
     fragment float4 point_fragment(PointOut in            [[stage_in]],
