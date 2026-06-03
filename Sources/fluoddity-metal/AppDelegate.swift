@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controls: ControlsPanel!
     private var hud: NSTextField!
     private var plot: PlotView!
+    private var help: HelpView!
     private let params = Params()
     private let mouse = MouseInput()
     private var tuning: Tuning!
@@ -81,6 +82,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                            Double(d.e), Double(d.z), Double(d.maxW), Double(d.div))
             self?.plot.push(d.e, d.z)
         }
+
+        // keyboard-help button (bottom-left; expands upward)
+        help = HelpView(text: """
+        drag         stir fluid + inject dye
+        right-click  adopt + mutate cohort (breed)
+        r            re-roll brains
+        [ ] / - =    keyboard tuning (sliders are primary)
+        space        print all params
+        """)
+        help.setFrameOrigin(NSPoint(x: 12, y: 12))
+        help.autoresizingMask = [.maxXMargin, .maxYMargin]
+        container.addSubview(help)
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],

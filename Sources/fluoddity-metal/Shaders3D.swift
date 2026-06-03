@@ -214,7 +214,10 @@ enum Shaders3D {
                                       device const float *dye      [[buffer(0)]],
                                       constant uint3 &d            [[buffer(1)]],
                                       constant float4x4 &invVP     [[buffer(2)]],
-                                      constant float &densityScale [[buffer(3)]]) {
+                                      constant float &densityScale [[buffer(3)]],
+                                      device const float *vfield   [[buffer(4)]],
+                                      constant float &colorMode    [[buffer(5)]]) {
+        int cm = int(colorMode + 0.5);
         float3 bg = float3(0.02, 0.02, 0.05);
         float2 ndc = in.uv * 2.0 - 1.0;
         float4 nh = invVP * float4(ndc, 0.0, 1.0);
@@ -236,7 +239,14 @@ enum Shaders3D {
             float dens = sampleScalar3(dye, pos * float3(d), d) * densityScale;
             if (dens > 0.002) {
                 float a = 1.0 - exp(-dens * dt * 15.0);
-                float3 emit = mix(float3(0.1, 0.4, 0.9), float3(1.0, 0.6, 0.2), clamp(dens, 0.0, 1.0));
+                float3 emit;
+                if (cm == 0) {                        // density gradient
+                    emit = mix(float3(0.1, 0.4, 0.9), float3(1.0, 0.6, 0.2), clamp(dens, 0.0, 1.0));
+                } else {
+                    float3 fv = sampleVel3(vfield, pos * float3(d), d);
+                    if (cm == 1) emit = 0.5 + 0.5 * (length(fv) > 1e-6 ? normalize(fv) : float3(0.0));  // flow direction → RGB
+                    else         emit = mix(float3(0.1, 0.3, 0.8), float3(1.0, 0.9, 0.4), clamp(length(fv) * 4.0, 0.0, 1.0));  // speed
+                }
                 acc += trans * a * emit;
                 trans *= 1.0 - a;
                 if (trans < 0.01) break;

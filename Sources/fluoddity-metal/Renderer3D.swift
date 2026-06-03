@@ -5,10 +5,11 @@ import simd
 // the dye density into a glowing volume through the orbital camera.
 final class Renderer3D: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
-    private let sim: Sim3D
+    let sim: Sim3D                              // internal: the 3D panel tunes it
     private let volumePipe: MTLRenderPipelineState
     let camera = Camera3D()
     var densityScale: Float = 0.006
+    var colorMode: Float = 0                    // 0 density, 1 flow direction, 2 speed
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         queue = device.makeCommandQueue()!
@@ -53,6 +54,9 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         enc.setFragmentBytes(&invVP, length: MemoryLayout<float4x4>.stride, index: 2)
         var ds = densityScale
         enc.setFragmentBytes(&ds, length: 4, index: 3)
+        enc.setFragmentBuffer(sim.vel, offset: 0, index: 4)
+        var cm = colorMode
+        enc.setFragmentBytes(&cm, length: 4, index: 5)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
 
