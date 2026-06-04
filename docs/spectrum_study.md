@@ -104,14 +104,29 @@ spectral peak), non-monotonically, maxing near sensorDist ≈ 0.012 → peak k �
 
 ![Fig 3: injection scale](../figures/fig3_injection_scale.png)
 
-### 2.4 Global collapse (all knobs)
+### 2.4 Collapse: clean in-plane, partial globally
 
-Across the *full* OAT set, no single variable collapses the slope (best
-R² = 0.55, and that candidate — sqrt(Z/E) — is partly circular). A four-input
-law (forceGain + swim + γ + sensorDist) reaches only **R² = 0.67**. So globally
-the exponent is **higher-dimensional**: the drive+dissipation two-group law
-(§2.2) is the dominant structure, with secondary modulation (~⅓ of the variance)
-from the scale/coupling knobs.
+The collapse test (`analyze_collapse.py [map|sweep]`) ranks candidate control
+variables by how tightly the slope collapses onto each. The answer depends
+critically on the *sampling*:
+
+- **On the dense map** (36 joint forceGain×velDamp cells) the slope collapses
+  onto a **single derived variable `forceGain·γ^0.38`** at **R² = 0.955** (= the
+  two-group fit reparametrized; Fig. 2). The intrinsic `sqrt(Z/E)` also collapses
+  it (R² = 0.92, though partly circular — Z is built from the same spectrum). So
+  *within the drive–dissipation plane the exponent is a genuine low-dimensional
+  law.*
+- **On the sparse OAT set** the same variable reaches only R² = 0.64 (best
+  four-input law R² = 0.69) — the one-axis excursions confound and *understate*
+  the collapse. The dense joint grid is the proper substrate; the OAT's apparent
+  "no collapse" was a sampling artifact.
+
+Honest synthesis: the exponent ≈ a clean **two-group drive+dissipation law in its
+dominant plane** (R² 0.955), with **secondary modulation** from the scale/coupling
+knobs (`sensorDist` injection scale, `senseScale`) that the map holds fixed —
+these add real structure the OAT exposes but the two-group law omits. (On the map
+a 3-group model adds nothing: `senseScale` is constant there, correctly detected
+as a dead predictor.)
 
 ## 3. What this is and isn't
 
@@ -131,11 +146,11 @@ from the scale/coupling knobs.
 swift run fluoddity-metal --spectest      # FFT estimator control check (peak at k=8)
 swift run fluoddity-metal --sweep         # OAT survey      → sweep_results.csv
 swift run fluoddity-metal --map           # 2D drive×damp   → map_results.csv
-.venv/bin/python analyze_collapse.py      # collapse test   → collapse_table.csv
+.venv/bin/python analyze_collapse.py map  # collapse test (dense) → collapse_table_map.csv
 .venv/bin/python make_figures.py          # figures/*.png + the two-group fit
 ```
 
-Artifacts: `sweep_results.csv`, `map_results.csv`, `collapse_table.csv`,
+Artifacts: `sweep_results.csv`, `map_results.csv`, `collapse_table_{map,sweep}.csv`,
 `figures/{fig1_slope_map,fig2_collapse,fig3_injection_scale}.png`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).
