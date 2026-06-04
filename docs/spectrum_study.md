@@ -188,6 +188,38 @@ threshold-and-decline.
 ![Fig 5: sensorDist characterization](../figures/fig5_sensordist.png)
 ![Fig 6: spectral shape vs sensorDist](../figures/fig6_sd_spectra.png)
 
+### 2.7 The transition zone is genuinely multistable
+
+The "noisy" transition zone flagged in §2.6 is **not noise — it is multistability**.
+Probing it (`--bistab`): at each sensorDist, 12 independent replicates (a fresh
+random initial condition each, *identical* baseline brain), measuring the
+steady-state peakK (Fig. 7):
+
+| sensorDist | peakK across 12 replicates | reading |
+|---|---|---|
+| 0.003 (sub-threshold) | `1` ×12 (std 0.0) | **monostable** — control |
+| 0.006 | mostly `k=4`, a few escape to `k≈9` (std 2.0) | bistability emerging |
+| 0.009 | `k≈4` (8×) **and** `k≈9` (4×) (std 2.7) | **bistable** |
+| 0.012 | `k≈1–4`, `k≈16–21`, one `k=26` (std 8.7) | **multistable** |
+
+The control (0.003) collapsing to a *single* value (std = 0) is the decisive
+check: the generous warmup does reach a unique attractor where one exists, so the
+spread at larger sensorDist is real attractor multiplicity, not under-convergence.
+The slope co-splits (Fig. 7, right): the low-k attractor at slope ≈ −2.0, the
+high-k attractor at ≈ −2.4.
+
+**Mechanism — the threshold is a region of coexistence, not a switch.** §2.6
+placed the bulk-drive → structured-injection transition at sensorDist ≈ the Taylor
+microscale λ. Near that threshold *both* attractors are dynamically accessible —
+the sub-λ "drive-the-bulk" state (low k) and the super-λ "inject-structure" state
+(high k) — and the initial condition selects which the flow falls into.
+Multistability *strengthens* across the zone (std 0 → 2.0 → 2.7 → 8.7) as the
+high-k attractor opens up. This is exactly why the single-replicate sensorDist
+sweep (§2.6) looked noisy there: it was sampling a multistable region one draw at
+a time.
+
+![Fig 7: multistability](../figures/fig7_bistability.png)
+
 ## 3. What this is and isn't
 
 - **It is:** a forced-dissipative active flow whose energy spectrum is a clean
@@ -197,9 +229,13 @@ threshold-and-decline.
 - **It is not:** 2D Navier–Stokes turbulence with a Kolmogorov/Kraichnan
   inertial range. There is no damping-independent cascade exponent — the slope
   tracks the inputs, which is the defining negative test for an inertial range.
+- **It also shows genuine multistability** near the injection-scale threshold
+  (§2.7): coexisting low-k and high-k flow attractors selected by the initial
+  condition — a real dynamical feature, not a numerical artifact.
 - **For the navier-stokes program:** use this engine for visualization and
   intuition, *not* to quote a cascade exponent. The reportable physics is the
-  **dial map itself** (Fig. 1) and the two-group law.
+  **dial map itself** (Fig. 1), the two-group law, and the threshold/multistability
+  of the injection scale.
 
 ## 4. Reproduce
 
@@ -209,13 +245,15 @@ swift run fluoddity-metal --sweep         # OAT survey      → sweep_results.cs
 swift run fluoddity-metal --map           # 2D drive×damp   → map_results.csv
 swift run fluoddity-metal --map3          # 3-axis +sensorDist → map3_results.csv
 swift run fluoddity-metal --sdscan        # fine sensorDist sweep → sdscan_{summary,spectra}.csv
+swift run fluoddity-metal --bistab        # multistability probe → bistab_results.csv
 .venv/bin/python analyze_collapse.py map  # collapse test (dense) → collapse_table_map.csv
 .venv/bin/python analyze_collapse.py map3 # 3-group test    → collapse_table_map3.csv
 .venv/bin/python make_figures.py          # figures 1-4 + the 2- & 3-group fits
 .venv/bin/python characterize_sd.py       # figures 5-6 + the resonance/threshold test
+.venv/bin/python bistab_analyze.py        # figure 7 + the multistability modality test
 ```
 
 Artifacts: `{sweep,map,map3}_results.csv`, `sdscan_{summary,spectra}.csv`,
-`collapse_table_{map,map3,sweep}.csv`, `figures/fig1..fig6 *.png`. Baseline
+`bistab_results.csv`, `collapse_table_{map,map3,sweep}.csv`, `figures/fig1..fig7 *.png`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).
