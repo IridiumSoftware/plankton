@@ -220,6 +220,40 @@ a time.
 
 ![Fig 7: multistability](../figures/fig7_bistability.png)
 
+### 2.8 Calibration against a real 2D NS DNS
+
+To ground the toy against ground truth, I built a forced 2D Navier–Stokes
+pseudospectral DNS (`ns2d_dns.py`: vorticity form, integrating-factor RK4, 2/3
+dealiasing, steady random forcing at k_f = 10 + large-scale drag). Correctness
+anchor (`selfcheck`): unforced inviscid Euler conserves energy and enstrophy to
+machine precision — the same solver-validation logic as the navier-stokes repo's
+`spectral_2d_control.jl`.
+
+**What a real 2D enstrophy cascade looks like** (Fig. 8): a steep falloff above
+the forcing scale — fitted slope **−3.3 to −4.4** over the inertial window
+(R² 0.99), with a sharp viscous cutoff. Sweeping forcing amplitude (0.5 → 8) the
+slope drifts −4.37 → −3.33 but **converges toward the universal Kraichnan −3** as
+Re grows (more forcing → wider inertial range): the drift is a finite-Re *fitting*
+effect, and the slope stays **pinned in the steep enstrophy band, never shallower
+than −3.3.**
+
+**The contrast with the toy** (Fig. 8, right): the fluoddity slope dials from
+−3.1 down to **−1.4** — reaching far shallower than *any* real 2D NS enstrophy
+cascade. Both drift with forcing (both change Re), but the DNS sits in the
+enstrophy band converging to −3, while the engine accesses a **shallow-spectrum
+regime 2D NS physically cannot** (the preset_003 baseline, ≈ −1.4 to −1.85, lies
+well above anything the DNS reaches). The spectral *shapes* differ in kind
+(Fig. 8, left): the DNS is steep with a clean viscous cutoff; the engine is
+shallow and extends shallowly to the grid scale.
+
+**Calibration verdict.** This confirms §3 quantitatively: the engine's spectra
+are *not* 2D NS cascades. A real cascade has a steep, Re-converging, universal
+exponent pinned near −3; the toy has a shallow, freely-tunable exponent with no
+universal limit. (Caveat: the DNS is N=256 with a limited inertial range; higher
+resolution would tighten the convergence to −3 but not change the conclusion.)
+
+![Fig 8: DNS comparison](../figures/fig8_dns_compare.png)
+
 ## 3. What this is and isn't
 
 - **It is:** a forced-dissipative active flow whose energy spectrum is a clean
@@ -229,6 +263,10 @@ a time.
 - **It is not:** 2D Navier–Stokes turbulence with a Kolmogorov/Kraichnan
   inertial range. There is no damping-independent cascade exponent — the slope
   tracks the inputs, which is the defining negative test for an inertial range.
+  Directly calibrated against a real forced 2D NS DNS (§2.8): the engine's
+  spectra are *shallower than and distinct from* a real enstrophy cascade
+  (pinned ≤ −3, converging to the universal −3), reaching into a regime 2D NS
+  cannot.
 - **It also shows genuine multistability** near the injection-scale threshold
   (§2.7): coexisting low-k and high-k flow attractors selected by the initial
   condition — a real dynamical feature, not a numerical artifact.
@@ -251,9 +289,14 @@ swift run fluoddity-metal --bistab        # multistability probe → bistab_resu
 .venv/bin/python make_figures.py          # figures 1-4 + the 2- & 3-group fits
 .venv/bin/python characterize_sd.py       # figures 5-6 + the resonance/threshold test
 .venv/bin/python bistab_analyze.py        # figure 7 + the multistability modality test
+.venv/bin/python ns2d_dns.py selfcheck    # real 2D NS DNS: Euler invariant conservation
+.venv/bin/python ns2d_dns.py sweep        # DNS forcing-amplitude sweep → ns2d_sweep.csv
+.venv/bin/python ns2d_dns.py run          # one DNS run → ns2d_spectrum.csv
+.venv/bin/python ns_compare.py            # figure 8: DNS vs the engine
 ```
 
 Artifacts: `{sweep,map,map3}_results.csv`, `sdscan_{summary,spectra}.csv`,
-`bistab_results.csv`, `collapse_table_{map,map3,sweep}.csv`, `figures/fig1..fig7 *.png`. Baseline
+`bistab_results.csv`, `ns2d_{spectrum,sweep}.csv`, `collapse_table_{map,map3,sweep}.csv`,
+`figures/fig1..fig8 *.png`. Real-NS reference solver: `ns2d_dns.py`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).
