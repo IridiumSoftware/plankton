@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.plot.isHidden = !on
             self.spectrum.isHidden = !on
         }
+        controls.onResetAvg = { [weak self] in self?.renderer?.resetSpectrumAvg() }
 
         // research HUD (top-right): live E / Z / |ω|max / div readout
         hud = NSTextField(frame: NSRect(x: frame.width - 392, y: frame.height - 34, width: 380, height: 22))
@@ -83,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         spectrum = SpectrumView(frame: NSRect(x: frame.width - 312, y: frame.height - 252, width: 300, height: 108))
         spectrum.autoresizingMask = [.minXMargin, .minYMargin]
         container.addSubview(spectrum)
-        renderer.onSpectrum = { [weak self] ek in self?.spectrum.update(ek) }
+        renderer.onSpectrum = { [weak self] ek, frames in self?.spectrum.update(ek, frames) }
 
         renderer.onDiagnostics = { [weak self] d in
             self?.hud.stringValue = String(format: "E %.3f    Z %.3f    |\u{03C9}|max %.2f    div %.4f",

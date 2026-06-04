@@ -1,0 +1,141 @@
+# Spectral exponent in an agent-forced 2D incompressible flow
+
+*A tunable, non-universal energy spectrum — and the two-group law that organizes it.*
+
+## Summary
+
+fluoddity-metal forces a real incompressible 2D fluid (Stable-Fluids: advect →
+Hodge/Leray project) with ~10⁶ agents driven by a symmetric Fourier brain. We
+measured the time-averaged radial energy spectrum E(k) over the parameter space
+and asked whether it shows a Kolmogorov-style inertial cascade.
+
+**It does not — and that's the result.** The spectrum is a *clean power law*
+almost everywhere (fit R² 0.92–0.99), but its **exponent is not universal**: it
+slides continuously from **≈ −0.5 to ≈ −3.2** as the forcing and dissipation are
+tuned. −5/3 is not a law the system obeys; it is one **dial position**.
+
+Within the two dominant levers — drive (`forceGain`) and dissipation (`velDamp`)
+— the exponent obeys a clean **two-group log-linear law**:
+
+> **inertial slope ≈ 1.24·log₁₀(forceGain) + 0.47·log₁₀(γ) − 1.12,  R² = 0.955**
+
+where γ = −ln(velDamp) is the per-frame drag rate. Both groups carry the *same*
+sign: more drive **and** more dissipation each *shallow* the slope (drive with
+~2.6× the leverage). The naive `drive/dissipation` ratio does **not** collapse it
+(R² = 0.01) — the two inputs do not oppose, so −5/3 traces a **diagonal contour**
+across the drive–dissipation plane (Fig. 1, red line).
+
+This is the spectral signature of a **forced-dissipative active flow**, not a
+turbulent cascade. The engine is an excellent *visualization and intuition* tool
+and a tunable spectral toy — but a cascade exponent cannot be quoted from it,
+because the exponent is set by the forcing configuration.
+
+## 1. Instrument
+
+The numbers are only as trustworthy as the estimator, and the first readings
+were **artifacts** — a cautionary chain worth recording:
+
+1. **Anti-aliasing.** The spectrum FFT first strided-downsampled the 1024² field
+   to 256², which *aliases* high-k energy into the band and **flattens the
+   high-k slope** — manufacturing shallow "−5/3-ish" slopes across almost any
+   setting. Fixed by running the FFT at full resolution (`Spectrum(n: 1024)`,
+   block-averaged if reduced). See `Spectrum.swift`.
+2. **Time-averaging.** A single-frame spectrum fluctuates; its slope/R² bounce.
+   `Spectrum` now accumulates a running mean (reset on any flow change). Slopes
+   are fit over N ≈ 70–100 accumulated frames.
+3. **Trimmed inertial fit.** The full right-limb fit blends the energy-containing
+   shoulder and the dissipation tail. `SpectrumFit` reports both the full fit and
+   a **trimmed inertial fit** over `[3·peak, k_max/2]`. *All slopes quoted here
+   are the trimmed inertial slope.* Same code drives the live plot and the
+   headless harness (single source of truth).
+
+A control check: a synthetic wave `vx = cos(2π·8·x/n)` peaks at exactly k=8
+(`--spectest`).
+
+**Caveat on `velDamp`:** it is a *uniform, scale-independent* drag (`vel *=
+velDamp`), not viscosity — it sets the overall energy level, not a small-scale
+dissipation scale (which is fixed by the diffusive semi-Lagrangian advection +
+grid). So γ is a drag rate, and the "dissipation" axis is an energy-sink axis.
+
+## 2. Results
+
+### 2.1 No universal exponent (one-axis-at-a-time survey)
+
+Holding everything at a baseline (`preset_003`) and walking one knob at a time
+(`--sweep`, 44 settings). Every dynamical knob moves the inertial slope; ranked
+by effect size:
+
+| knob | inertial slope range | Δ | note |
+|---|---|---|---|
+| **forceGain** | −3.08 → −1.42 | **1.66** | strongest lever |
+| **velDamp** | −1.15 → −2.06 | 0.91 | (energy-sink axis) |
+| **sensorDist** | −1.53 → −2.41 | 0.88 | **also sets peakK 1→17** |
+| **senseScale** | −1.60 → −2.26 | 0.66 | |
+| **swim** | −1.72 → −1.16 | 0.56 | swim=0 → dead flow |
+| speedGain / fluidPull / cohesion | ~0.33 each | weak | |
+| **brain** | −1.78 → −2.04 | **0.26** | **weakest → brain-independent** |
+
+The exponent spans the classical 2D values and beyond: **weak drive → ≈ −3**
+(enstrophy-cascade-like), **strong drive → shallow** (toward −0.5), passing
+through −5/3. The forcing *structure* (brain) is the least influential input —
+the spectrum is governed by forcing *amplitudes and scales*, not the pattern.
+
+### 2.2 The drive × dissipation map and the two-group law
+
+A 36-cell `forceGain × velDamp` grid (`--map`), everything else at baseline,
+gives a smooth monotonic surface (Fig. 1). The −5/3 contour is **diagonal**: the
+two levers trade off. Fitting the 36 cells:
+
+- naive ratio `slope ~ log₁₀(drive/γ)`: **R² = 0.01** (fails — they don't oppose)
+- two groups `slope ~ log₁₀(forceGain) + log₁₀(γ)`: **R² = 0.955** (Fig. 2)
+
+So in this plane the exponent is a clean, ~95%-predictable two-group law. The
+velDamp colors are fully mixed along the collapse line (Fig. 2) — confirming it
+is the *combination*, not either lever alone.
+
+![Fig 1: slope map](../figures/fig1_slope_map.png)
+![Fig 2: collapse](../figures/fig2_collapse.png)
+
+### 2.3 Injection scale
+
+`sensorDist` (how far agents sense) sets the **injection wavenumber** (the
+spectral peak), non-monotonically, maxing near sensorDist ≈ 0.012 → peak k ≈ 17
+(Fig. 3). This is the scale at which the agents pump energy into the fluid.
+
+![Fig 3: injection scale](../figures/fig3_injection_scale.png)
+
+### 2.4 Global collapse (all knobs)
+
+Across the *full* OAT set, no single variable collapses the slope (best
+R² = 0.55, and that candidate — sqrt(Z/E) — is partly circular). A four-input
+law (forceGain + swim + γ + sensorDist) reaches only **R² = 0.67**. So globally
+the exponent is **higher-dimensional**: the drive+dissipation two-group law
+(§2.2) is the dominant structure, with secondary modulation (~⅓ of the variance)
+from the scale/coupling knobs.
+
+## 3. What this is and isn't
+
+- **It is:** a forced-dissipative active flow whose energy spectrum is a clean
+  power law with a **forcing-controlled, non-universal exponent**, well-described
+  in the dominant plane by a two-group drive+dissipation law (R² 0.955).
+- **It is not:** 2D Navier–Stokes turbulence with a Kolmogorov/Kraichnan
+  inertial range. There is no damping-independent cascade exponent — the slope
+  tracks the inputs, which is the defining negative test for an inertial range.
+- **For the navier-stokes program:** use this engine for visualization and
+  intuition, *not* to quote a cascade exponent. The reportable physics is the
+  **dial map itself** (Fig. 1) and the two-group law.
+
+## 4. Reproduce
+
+```
+swift run fluoddity-metal --spectest      # FFT estimator control check (peak at k=8)
+swift run fluoddity-metal --sweep         # OAT survey      → sweep_results.csv
+swift run fluoddity-metal --map           # 2D drive×damp   → map_results.csv
+.venv/bin/python analyze_collapse.py      # collapse test   → collapse_table.csv
+.venv/bin/python make_figures.py          # figures/*.png + the two-group fit
+```
+
+Artifacts: `sweep_results.csv`, `map_results.csv`, `collapse_table.csv`,
+`figures/{fig1_slope_map,fig2_collapse,fig3_injection_scale}.png`. Baseline
+config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
+the live `SpectrumView` and the headless harnesses).

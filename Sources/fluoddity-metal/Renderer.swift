@@ -15,8 +15,8 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let dyePipe: MTLRenderPipelineState
     private let pointsPipe: MTLRenderPipelineState
     var onDiagnostics: ((Diag) -> Void)?       // diagnostics sink (set by AppDelegate)
-    var onSpectrum: (([Float]) -> Void)?       // energy spectrum E(k) sink
-    private let spectrum = Spectrum(n: 256)
+    var onSpectrum: (([Float], Int) -> Void)?  // energy spectrum E(k) + avg frame count
+    private let spectrum = Spectrum(n: 1024)   // == fieldDim: full-res, no aliasing
     private var hudFrame = 0
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
@@ -57,10 +57,11 @@ final class Renderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
-    func reroll() { sim.rerollRule() }
-    func reset() { sim.reset() }
+    func reroll() { sim.rerollRule(); spectrum.resetAverage() }
+    func reset() { sim.reset(); spectrum.resetAverage() }
     func ruleSnapshot() -> [Float] { sim.ruleSnapshot() }
-    func loadRule(_ floats: [Float]) { sim.loadRule(floats) }
+    func loadRule(_ floats: [Float]) { sim.loadRule(floats); spectrum.resetAverage() }
+    func resetSpectrumAvg() { spectrum.resetAverage() }
 
     // Full-field CPU reductions for the research HUD (caller throttles the rate):
     // E = mean|u|², Z = mean ω² (enstrophy), |ω|max (intermittency), mean|div|
@@ -107,7 +108,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             let n = Int(sim.dim.x)
             let v = sim.vel.contents().bindMemory(to: Float.self, capacity: 2 * n * n)
             spectrum.compute(v, dim: n)
-            onSpectrum?(spectrum.ek)
+            onSpectrum?(spectrum.ek, spectrum.frames)
         }
 
         sim.encode(into: cmd)

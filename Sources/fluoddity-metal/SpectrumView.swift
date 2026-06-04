@@ -5,8 +5,9 @@ import AppKit
 // (Kolmogorov-like) cascade range.
 final class SpectrumView: NSView {
     private var ek: [Float] = []
+    private var frames = 0
 
-    func update(_ e: [Float]) { ek = e; needsDisplay = true }
+    func update(_ e: [Float], _ n: Int) { ek = e; frames = n; needsDisplay = true }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor(white: 0, alpha: 0.45).setFill()
@@ -48,9 +49,26 @@ final class SpectrumView: NSView {
         path.lineWidth = 1.5
         path.stroke()
 
-        ("E(k)   dashed = -5/3" as NSString).draw(
-            at: NSPoint(x: 8, y: bounds.height - 15),
-            withAttributes: [.foregroundColor: NSColor.white,
-                             .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)])
+        // Slope fits via the SHARED SpectrumFit (identical to the --sweep harness).
+        // The faint dashed verticals mark the trimmed inertial window [inLo, inHi].
+        let f = SpectrumFit.compute(ek)
+        NSColor(white: 1, alpha: 0.22).setStroke()
+        for kk in [f.inLo, f.inHi] where kk >= 1 {
+            let g = NSBezierPath()
+            g.move(to: NSPoint(x: px(Float(kk)), y: pad))
+            g.line(to: NSPoint(x: px(Float(kk)), y: pad + H))
+            g.lineWidth = 0.5
+            g.setLineDash([2, 2], count: 2, phase: 0)
+            g.stroke()
+        }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.white,
+            .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)]
+        let l1 = String(format: "peak k=%d   high %.2f (R\u{00B2}%.2f)   avg N=%d",
+                        f.peakK, f.highSlope, f.highR2, frames)
+        let l2 = String(format: "inertial k%d\u{2013}%d: %.2f (R\u{00B2}%.2f)   \u{2212}5/3=\u{2212}1.67",
+                        f.inLo, f.inHi, f.inSlope, f.inR2)
+        (l1 as NSString).draw(at: NSPoint(x: 8, y: bounds.height - 15), withAttributes: attrs)
+        (l2 as NSString).draw(at: NSPoint(x: 8, y: bounds.height - 28), withAttributes: attrs)
     }
 }

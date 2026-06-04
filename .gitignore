@@ -12,3 +12,9 @@ presets/
 
 # macOS
 .DS_Store
+
+# Python analysis env / tooling artifacts
+.venv/
+__pycache__/
+*.pyc
+.paper-index.json

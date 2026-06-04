@@ -36,6 +36,9 @@ swift run fluoddity-metal --3d       # 3D engine (orbital, volumetric)
 swift run fluoddity-metal --smoke    # toolchain / atomic_float
 swift run fluoddity-metal --simtest  # 2D fluid incompressibility + stability
 swift run fluoddity-metal --3dtest   # 3D fluid incompressibility + stability
+swift run fluoddity-metal --spectest # FFT energy-spectrum estimator check
+swift run fluoddity-metal --sweep    # parameter survey       → sweep_results.csv
+swift run fluoddity-metal --map      # drive×dissipation map  → map_results.csv
 ```
 
 ## 2D engine
@@ -65,6 +68,17 @@ velocity, runs the 2D symmetric brain per plane, and integrates the steering int
 - **Drag** to orbit · **scroll** to zoom.
 - **`r`** — re-roll the 3D brain.
 - **`[` / `]`** — dim / brighten the volume density.
+
+## Spectrum study
+
+The research-viz layer measures the time-averaged energy spectrum E(k). A headless
+parameter survey (`--sweep`) and a 2D drive×dissipation map (`--map`) show the
+engine produces clean power-law spectra whose **exponent is not universal** — it
+slides from ~−0.5 to ~−3.2 with forcing and dissipation, and within the dominant
+plane obeys a two-group law (slope ≈ 1.24·log₁₀(forceGain) + 0.47·log₁₀(drag) −
+1.12, R² = 0.955). So −5/3 is a *dial position*, not a cascade law: this is a
+forced-dissipative active flow, not 2D turbulence. Full write-up + figures:
+**[`docs/spectrum_study.md`](docs/spectrum_study.md)**.
 
 ## How it's built
 
