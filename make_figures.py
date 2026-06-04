@@ -83,3 +83,29 @@ ax.set_title("sensorDist sets the injection scale")
 plt.tight_layout(); plt.savefig("figures/fig3_injection_scale.png", dpi=140); plt.close()
 
 print("wrote figures/fig1_slope_map.png, fig2_collapse.png, fig3_injection_scale.png")
+
+# ── Fig 4 (optional): 3-axis scan — does sensorDist extend the law? ──────────
+import os
+if os.path.exists("map3_results.csv"):
+    M3 = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("map3_results.csv")) ]
+    fg3 = np.array([r["forceGain"] for r in M3]); vd3 = np.array([r["velDamp"] for r in M3])
+    sd3 = np.array([r["sensorDist"] for r in M3]); sl3 = np.array([r["inSlope"] for r in M3])
+    gam3 = -np.log(vd3)
+    c2, R2_2g = fit([np.log10(fg3), np.log10(gam3)], sl3)              # drive + dissipation
+    c3, R2_3g = fit([np.log10(fg3), np.log10(gam3), np.log10(sd3)], sl3)  # + injection scale
+    a, b, d, c0 = c3
+    print(f"\nMAP3 ({len(M3)} cells):")
+    print(f"  2-group  slope ~ log(fG)+log(gamma):           R^2 = {R2_2g:.3f}")
+    print(f"  3-group  + log(sensorDist)  [coef={d:+.2f}]:     R^2 = {R2_3g:.3f}")
+    u3 = a*np.log10(fg3) + b*np.log10(gam3) + d*np.log10(sd3)
+    fig, ax = plt.subplots(figsize=(6.2, 4.6))
+    sc = ax.scatter(u3, sl3, c=np.log10(sd3), cmap="cividis", s=42, edgecolor="k", linewidth=0.3)
+    xs = np.linspace(u3.min(), u3.max(), 50)
+    ax.plot(xs, xs + c0, "k--", lw=1.2, label=f"3-group fit  R²={R2_3g:.2f}")
+    ax.axhline(-5/3, color="red", lw=1, ls=":", label="-5/3")
+    ax.set_xlabel(f"3-group predictor:  {a:.2f}·logfG {b:+.2f}·logγ {d:+.2f}·log(sensorDist)")
+    ax.set_ylabel("inertial slope")
+    ax.set_title("3-axis collapse: drive + dissipation + injection scale")
+    plt.colorbar(sc, label="log₁₀(sensorDist)"); ax.legend()
+    plt.tight_layout(); plt.savefig("figures/fig4_collapse3.png", dpi=140); plt.close()
+    print("wrote figures/fig4_collapse3.png")

@@ -18,13 +18,15 @@ src = sys.argv[1] if len(sys.argv) > 1 else "sweep"
 BASE = json.load(open("presets/preset_003.json"))["params"]
 
 rows = []
-if src == "map":
-    path = "map_results.csv"
+if src in ("map", "map3"):
+    path = f"{src}_results.csv"
     for r in csv.DictReader(open(path)):
         p = dict(BASE)
         p["forceGain"] = float(r["forceGain"]); p["velDamp"] = float(r["velDamp"])
-        rows.append(dict(label=f"fG={r['forceGain']},vD={r['velDamp']}",
-                         E=float(r["E"]), Z=float(r["Z"]), pk=int(r["peakK"]),
+        if "sensorDist" in r:
+            p["sensorDist"] = float(r["sensorDist"])
+        lbl = f"fG={r['forceGain']},vD={r['velDamp']}" + (f",sD={r['sensorDist']}" if "sensorDist" in r else "")
+        rows.append(dict(label=lbl, E=float(r["E"]), Z=float(r["Z"]), pk=int(r["peakK"]),
                          inSlope=float(r["inSlope"]), inR2=float(r["inR2"]), p=p))
 else:
     path = "sweep_results.csv"
@@ -107,6 +109,7 @@ def ols(feats):
 models = {
     "slope ~ log(forceGain)":               lambda r: [math.log10(r["p"]["forceGain"])],
     "slope ~ log(forceGain)+log(gamma)":    lambda r: [math.log10(r["p"]["forceGain"]), math.log10(gamma(r))],
+    "slope ~ log(fG)+log(gamma)+log(sensorDist)": lambda r: [math.log10(r["p"]["forceGain"]), math.log10(gamma(r)), math.log10(r["p"]["sensorDist"])],
     "slope ~ log(fG)+log(gamma)+log(senseScale)": lambda r: [math.log10(r["p"]["forceGain"]), math.log10(gamma(r)), math.log10(r["p"]["senseScale"])],
 }
 print("\nMULTIVARIATE LAW:")

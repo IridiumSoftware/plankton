@@ -128,11 +128,35 @@ these add real structure the OAT exposes but the two-group law omits. (On the ma
 a 3-group model adds nothing: `senseScale` is constant there, correctly detected
 as a dead predictor.)
 
+### 2.5 Three axes: the injection scale breaks the law
+
+Adding `sensorDist` as a third axis (`--map3`, 4×4×4 = 64 cells) tests whether the
+two-group law *extends* to a clean three-group law. **It does not** (Fig. 4):
+
+- In the pure drive×dissipation plane (fixed sensorDist) the two-group fit was
+  **R² = 0.955**. Once `sensorDist` varies, the *same* two-group fit drops to
+  **R² ≈ 0.74** — the injection scale injects variance drive+dissipation can't see.
+- Adding `sensorDist` as a third *log-linear* group recovers only part of it
+  (**R² ≈ 0.78–0.80**, coefficient −0.32) — nowhere near 0.955. So `sensorDist`'s
+  effect is **not log-linear**: a monotonic group cannot capture the non-monotonic
+  peak-k response (§2.3, the hump at sensorDist ≈ 0.012).
+- At strong dissipation + small injection scale, 6 of 64 cells fall below the
+  power-law cleanliness bar (R² < 0.88) — the spectrum stops being a clean power
+  law off the baseline plane.
+
+**The two-group law is plane-local, not global.** The injection scale is a genuine
+third dimension with non-log-linear structure; the exponent is *not* a
+low-dimensional law across the full forcing space. Drive×dissipation collapses
+cleanly (R² 0.955); the injection scale breaks it.
+
+![Fig 4: 3-axis collapse](../figures/fig4_collapse3.png)
+
 ## 3. What this is and isn't
 
 - **It is:** a forced-dissipative active flow whose energy spectrum is a clean
   power law with a **forcing-controlled, non-universal exponent**, well-described
-  in the dominant plane by a two-group drive+dissipation law (R² 0.955).
+  in the dominant plane by a two-group drive+dissipation law (R² 0.955) — but a
+  **plane-local** one: varying the injection scale breaks it (§2.5).
 - **It is not:** 2D Navier–Stokes turbulence with a Kolmogorov/Kraichnan
   inertial range. There is no damping-independent cascade exponent — the slope
   tracks the inputs, which is the defining negative test for an inertial range.
@@ -146,11 +170,13 @@ as a dead predictor.)
 swift run fluoddity-metal --spectest      # FFT estimator control check (peak at k=8)
 swift run fluoddity-metal --sweep         # OAT survey      → sweep_results.csv
 swift run fluoddity-metal --map           # 2D drive×damp   → map_results.csv
+swift run fluoddity-metal --map3          # 3-axis +sensorDist → map3_results.csv
 .venv/bin/python analyze_collapse.py map  # collapse test (dense) → collapse_table_map.csv
-.venv/bin/python make_figures.py          # figures/*.png + the two-group fit
+.venv/bin/python analyze_collapse.py map3 # 3-group test    → collapse_table_map3.csv
+.venv/bin/python make_figures.py          # figures/*.png + the 2- & 3-group fits
 ```
 
-Artifacts: `sweep_results.csv`, `map_results.csv`, `collapse_table_{map,sweep}.csv`,
-`figures/{fig1_slope_map,fig2_collapse,fig3_injection_scale}.png`. Baseline
+Artifacts: `{sweep,map,map3}_results.csv`, `collapse_table_{map,map3,sweep}.csv`,
+`figures/{fig1_slope_map,fig2_collapse,fig3_injection_scale,fig4_collapse3}.png`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).
