@@ -151,6 +151,43 @@ cleanly (R² 0.955); the injection scale breaks it.
 
 ![Fig 4: 3-axis collapse](../figures/fig4_collapse3.png)
 
+### 2.6 Characterizing the injection scale: a threshold at the Taylor microscale
+
+A fine log-spaced sweep of `sensorDist` alone (`--sdscan`, 20 points, others at
+baseline; Figs. 5–6) resolves the peak-k hump and explains why §2.5's log-linear
+fit failed. The injection wavenumber is a **threshold-and-decline** function of the
+sensing distance, not a power law:
+
+- **Below sensorDist ≈ 0.004** (sensing distance < the Taylor microscale
+  λ = √(E/Z) ≈ 4 cells): the spectral peak sits at **k = 1** — agents sense within
+  a single eddy and drive the *bulk* (largest) scale (6 points, all peakK = 1;
+  Fig. 6 purple).
+- **Onset at sensorDist ≈ λ:** structured injection switches on right where
+  `sensorDist` crosses λ (the crossing is at ≈ 0.0037, coinciding with peakK's
+  departure from 1). Once the sensing distance exceeds the flow's gradient scale,
+  agents "feel" velocity gradients and inject sub-structure.
+- **Peak injection at sensorDist ≈ 0.014** (≈ 3–4 λ): **peakK ≈ 21**, the
+  smallest-scale injection, energy built into a mid-k bump (Fig. 6 green).
+- **Above the optimum:** peakK declines smoothly (21 → 4 by sensorDist = 0.1) — a
+  larger sensing distance averages over bigger regions and coarsens the injection
+  back toward large scales (Fig. 6 yellow).
+- The transition zone (0.004–0.012) is **noisy/bistable** — peakK scatters
+  (6, 4, 9, 1, 11, 21), one point dropping to R² = 0.89.
+
+Two robust corollaries: (1) all spectra **converge to the same dissipation tail**
+at k ≳ 200 (Fig. 6) — the small-scale cutoff is set by the solver (numerical
+diffusion + grid), *not* by `sensorDist`, consistent with §2.1/§2.5; (2) the
+steepest slopes (≈ −2.5) occur in the structured-injection regime, where the high
+injection-k leaves the longest range for the spectrum to fall over.
+
+**This is why `sensorDist` broke the low-dimensional law (§2.5):** the injection
+scale is a *threshold* relative to a measured fluid length (the Taylor microscale),
+then a decline — not a smooth log-linear knob. No monotonic group can fit a
+threshold-and-decline.
+
+![Fig 5: sensorDist characterization](../figures/fig5_sensordist.png)
+![Fig 6: spectral shape vs sensorDist](../figures/fig6_sd_spectra.png)
+
 ## 3. What this is and isn't
 
 - **It is:** a forced-dissipative active flow whose energy spectrum is a clean
@@ -171,12 +208,14 @@ swift run fluoddity-metal --spectest      # FFT estimator control check (peak at
 swift run fluoddity-metal --sweep         # OAT survey      → sweep_results.csv
 swift run fluoddity-metal --map           # 2D drive×damp   → map_results.csv
 swift run fluoddity-metal --map3          # 3-axis +sensorDist → map3_results.csv
+swift run fluoddity-metal --sdscan        # fine sensorDist sweep → sdscan_{summary,spectra}.csv
 .venv/bin/python analyze_collapse.py map  # collapse test (dense) → collapse_table_map.csv
 .venv/bin/python analyze_collapse.py map3 # 3-group test    → collapse_table_map3.csv
-.venv/bin/python make_figures.py          # figures/*.png + the 2- & 3-group fits
+.venv/bin/python make_figures.py          # figures 1-4 + the 2- & 3-group fits
+.venv/bin/python characterize_sd.py       # figures 5-6 + the resonance/threshold test
 ```
 
-Artifacts: `{sweep,map,map3}_results.csv`, `collapse_table_{map,map3,sweep}.csv`,
-`figures/{fig1_slope_map,fig2_collapse,fig3_injection_scale,fig4_collapse3}.png`. Baseline
+Artifacts: `{sweep,map,map3}_results.csv`, `sdscan_{summary,spectra}.csv`,
+`collapse_table_{map,map3,sweep}.csv`, `figures/fig1..fig6 *.png`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).
