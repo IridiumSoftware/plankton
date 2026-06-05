@@ -18,3 +18,6 @@ presets/
 __pycache__/
 *.pyc
 .paper-index.json
+
+# 3D velocity-field dumps (~25 MB each; regenerate with --3dspec)
+vel3d_*.bin

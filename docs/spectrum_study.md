@@ -254,6 +254,41 @@ resolution would tighten the convergence to −3 but not change the conclusion.)
 
 ![Fig 8: DNS comparison](../figures/fig8_dns_compare.png)
 
+### 2.9 The dial is dimension-independent: the 3D engine too
+
+The decisive test for "real cascade vs dial": in *3D*, turbulence's forward
+**energy** cascade genuinely is −5/3 (Kolmogorov) — unlike 2D. So if the engine's
+spectrum were set by fluid dynamics, it should *lock onto* −5/3 in 3D. It does not.
+
+A 3D spectrum probe (`--3dspec`: the 128³ incompressible engine, forcing swept
+over a fixed brain; velocity dumped and 3D-FFT'd, spherically binned in numpy via
+`analyze_3dspec.py`) gives, on the forward limb *above* the injection peak
+(Fig. 9):
+
+| forceGain | peakK | forward slope | R² |
+|---|---|---|---|
+| 0.25 | 12 | −1.50 | 0.98 |
+| 0.5 | 13 | −1.40 | 1.00 |
+| 1 | 16 | −1.21 | 1.00 |
+| 2 | 17 | −0.79 | 0.99 |
+| 4 | 2 | −0.08 | 0.25 (large-scale-flooded) |
+
+These are *clean* power laws (R² 0.98–1.00), but the slope is **forcing-controlled
+— a dial, exactly as in 2D**, shallowing −1.50 → −0.79 as forcing grows. And
+**every slope is shallower than the 3D Kolmogorov −5/3**: the engine does not
+produce a real forward energy cascade even where one is expected. At the highest
+forcing the spectrum floods the large scales (peak → k=2, nearly flat).
+
+**Capstone.** The agent forcing dominates the fluid dynamics *regardless of
+dimension*. The engine is a forcing-controlled spectral dial in **both 2D and
+3D** — a forced-dissipative active system, not turbulence, in either. (Caveat:
+128³ is modest — the agents force at k≈12–17, leaving only ~k 17–55 of forward
+range, so the *absence* of −5/3 is partly forcing-scale/resolution-limited; but
+the forcing-*control* of the slope is the robust dial signature, independent of
+range.)
+
+![Fig 9: 3D spectrum](../figures/fig9_3d_spectrum.png)
+
 ## 3. What this is and isn't
 
 - **It is:** a forced-dissipative active flow whose energy spectrum is a clean
@@ -270,10 +305,14 @@ resolution would tighten the convergence to −3 but not change the conclusion.)
 - **It also shows genuine multistability** near the injection-scale threshold
   (§2.7): coexisting low-k and high-k flow attractors selected by the initial
   condition — a real dynamical feature, not a numerical artifact.
+- **The dial is dimension-independent** (§2.9): the 128³ 3D engine's
+  forward-cascade slope is also forcing-controlled and stays *shallower than* the
+  3D Kolmogorov −5/3 — so even where a real forward energy cascade is expected,
+  the agent forcing dominates. A spectral dial in 2D and 3D alike.
 - **For the navier-stokes program:** use this engine for visualization and
   intuition, *not* to quote a cascade exponent. The reportable physics is the
-  **dial map itself** (Fig. 1), the two-group law, and the threshold/multistability
-  of the injection scale.
+  **dial map itself** (Fig. 1), the two-group law, the threshold/multistability
+  of the injection scale, and the 2D-DNS calibration.
 
 ## 4. Reproduce
 
@@ -293,10 +332,14 @@ swift run fluoddity-metal --bistab        # multistability probe → bistab_resu
 .venv/bin/python ns2d_dns.py sweep        # DNS forcing-amplitude sweep → ns2d_sweep.csv
 .venv/bin/python ns2d_dns.py run          # one DNS run → ns2d_spectrum.csv
 .venv/bin/python ns_compare.py            # figure 8: DNS vs the engine
+swift run fluoddity-metal --3dspec        # 128³ 3D forcing sweep → vel3d_*.bin + manifest
+.venv/bin/python analyze_3dspec.py        # figure 9: 3D energy spectrum (numpy 3D FFT)
 ```
 
 Artifacts: `{sweep,map,map3}_results.csv`, `sdscan_{summary,spectra}.csv`,
-`bistab_results.csv`, `ns2d_{spectrum,sweep}.csv`, `collapse_table_{map,map3,sweep}.csv`,
-`figures/fig1..fig8 *.png`. Real-NS reference solver: `ns2d_dns.py`. Baseline
+`bistab_results.csv`, `ns2d_{spectrum,sweep}.csv`, `3dspec_manifest.csv`,
+`collapse_table_{map,map3,sweep}.csv`, `figures/fig1..fig9 *.png` (3D dumps
+`vel3d_*.bin` are gitignored — regenerate with `--3dspec`). Real-NS reference
+solver: `ns2d_dns.py`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).
