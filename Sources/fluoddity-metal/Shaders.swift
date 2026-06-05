@@ -1,13 +1,22 @@
 // All Metal Shading Language for the engine, compiled at runtime.
 //
-// MIDDLE-ROAD MODEL (2D): agents drive an incompressible fluid.
-//   - Particles SENSE the dye field ahead (Physarum/Sage-Jenson), steer toward
-//     it, swim at a fixed speed, deposit their steered velocity (forcing) + dye.
-//   - The velocity field is advected, damped, then PROJECTED divergence-free
-//     (Jacobi pressure-Poisson = discrete Hodge/Helmholtz projection, same
-//     operator as navier-stokes' spectral_2d_control.jl, opposite half).
+// FAITHFUL MODEL (2D): active agents drive a faithful incompressible NS fluid.
+//   - Particles SENSE the flow + the dye (density) ahead, steer by the Fourier
+//     brain + chemotaxis (toward higher dye = aggregation), and FORCE the fluid
+//     as a NET-ZERO force DIPOLE (+f ahead, −f behind — a real active swimmer).
+//   - The velocity field is advected, given real ν∇² VISCOSITY (scale-selective,
+//     `diffuse_velocity`) + a weak large-scale drag, then PROJECTED divergence-free
+//     (Jacobi pressure-Poisson = discrete Hodge/Helmholtz projection).
 //   - Agents are also carried by the projected fluid (two-way). Dye is advected
 //     by the flow and rendered; agents drawn as additive points on top.
+//
+// FAITHFUL RETROFIT (2026-06-05): the two unphysical pieces of the original engine
+// — uniform drag (no inertial range) and a momentum-monopole splat (net force ≠ 0)
+// — are replaced by ν∇² viscosity and a net-zero force dipole, the fixes validated
+// in the navier-stokes repo (AT-1..6 / SIM_SPEC.md). The fluid now behaves like real
+// 2D NS (a universal −3 enstrophy cascade); the lifelike creatures come from the
+// chemotaxis (`cohesion`), which survives on the faithful fluid (AT-5). See
+// docs/faithful_fluid.md.
 //
 // Tunables are now UNIFORMS (see Params.swift / Tuning.swift) so they can be
 // dialed live. Velocity is interleaved (vel[2i]=x, vel[2i+1]=y), cells/frame,
@@ -74,20 +83,32 @@ enum Shaders {
         vout[2 * i] = sv.x; vout[2 * i + 1] = sv.y;
     }
 
-    // ── 2. splat: agents deposit steered velocity (forcing) + dye ─────────
-    kernel void splat(device atomic_float *vel    [[buffer(0)]],
-                      device atomic_float *dye      [[buffer(1)]],
-                      device const Particle *parts  [[buffer(2)]],
-                      constant uint2 &d            [[buffer(3)]],
-                      constant float &forceGain    [[buffer(4)]],
-                      constant float &dyeAmt       [[buffer(5)]],
-                      uint gid                     [[thread_position_in_grid]]) {
-        Particle p = parts[gid];
-        float fx = p.pos.x * float(d.x) - 0.5;
-        float fy = p.pos.y * float(d.y) - 0.5;
+    // ── 1b. viscous diffusion ν∇²v (explicit 5-point Laplacian) — the FAITHFUL
+    //        fix for fluoddity's uniform drag. Real viscosity is k²-SELECTIVE
+    //        (kills small scales, spares large ⇒ an inertial range / cascade);
+    //        uniform drag damped every mode equally ⇒ no cascade (the "dial").
+    //        Stable for visc ≤ 0.25 (explicit-diffusion limit). Mirrors the
+    //        navier-stokes AT-1/AT-6 ν∇² fix, grid-discretized for live stepping.
+    kernel void diffuse_velocity(device const float *vin [[buffer(0)]],
+                                 device float *vout        [[buffer(1)]],
+                                 constant uint2 &d         [[buffer(2)]],
+                                 constant float &visc      [[buffer(3)]],
+                                 uint2 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y) return;
+        int x = int(gid.x), y = int(gid.y);
+        uint i = gid.y * d.x + gid.x;
+        float2 c = float2(vin[2 * i], vin[2 * i + 1]);
+        float2 lap = velAt(vin, x - 1, y, d) + velAt(vin, x + 1, y, d)
+                   + velAt(vin, x, y - 1, d) + velAt(vin, x, y + 1, d) - 4.0 * c;
+        float2 o = c + visc * lap;
+        vout[2 * i] = o.x; vout[2 * i + 1] = o.y;
+    }
+
+    // bilinear force deposit at a grid point (cells) — used twice for the dipole
+    static inline void depositForce(device atomic_float *vel, float fx, float fy,
+                                    float2 f, uint2 d) {
         int x0 = int(floor(fx)), y0 = int(floor(fy));
         float tx = fx - float(x0), ty = fy - float(y0);
-        float2 f = p.vel * forceGain;
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
                 int xi = wrapi(x0 + i, int(d.x)), yi = wrapi(y0 + j, int(d.y));
@@ -95,7 +116,39 @@ enum Shaders {
                 uint c = uint(yi) * d.x + uint(xi);
                 atomic_fetch_add_explicit(&vel[2 * c],     f.x * w, memory_order_relaxed);
                 atomic_fetch_add_explicit(&vel[2 * c + 1], f.y * w, memory_order_relaxed);
-                atomic_fetch_add_explicit(&dye[c],         dyeAmt * w, memory_order_relaxed);
+            }
+        }
+    }
+
+    // ── 2. splat: agents force the fluid as a NET-ZERO force DIPOLE (+f at the
+    //        head, −f at the tail ⇒ Σmomentum = 0 — the physical active-swimmer
+    //        forcing, the FAITHFUL fix for the momentum-monopole splat) and
+    //        deposit dye (= local agent density, the chemotaxis signal) at center.
+    kernel void splat(device atomic_float *vel    [[buffer(0)]],
+                      device atomic_float *dye      [[buffer(1)]],
+                      device const Particle *parts  [[buffer(2)]],
+                      constant uint2 &d            [[buffer(3)]],
+                      constant float &forceGain    [[buffer(4)]],
+                      constant float &dyeAmt       [[buffer(5)]],
+                      constant float &dipoleLen    [[buffer(6)]],
+                      uint gid                     [[thread_position_in_grid]]) {
+        Particle p = parts[gid];
+        float cx = p.pos.x * float(d.x) - 0.5;
+        float cy = p.pos.y * float(d.y) - 0.5;
+        float spd = length(p.vel);
+        float2 fwd = spd > 1e-6 ? p.vel / spd : float2(1.0, 0.0);
+        float2 f = p.vel * forceGain;
+        float2 h = fwd * (dipoleLen * 0.5);
+        depositForce(vel, cx + h.x, cy + h.y,  f, d);   // +f ahead (head)
+        depositForce(vel, cx - h.x, cy - h.y, -f, d);   // −f behind (tail) ⇒ net-zero
+        // dye at the agent center (bilinear) — density marker the chemotaxis reads
+        int x0 = int(floor(cx)), y0 = int(floor(cy));
+        float tx = cx - float(x0), ty = cy - float(y0);
+        for (int j = 0; j < 2; j++) {
+            for (int i = 0; i < 2; i++) {
+                int xi = wrapi(x0 + i, int(d.x)), yi = wrapi(y0 + j, int(d.y));
+                float w = (i == 0 ? 1.0 - tx : tx) * (j == 0 ? 1.0 - ty : ty);
+                atomic_fetch_add_explicit(&dye[uint(yi) * d.x + uint(xi)], dyeAmt * w, memory_order_relaxed);
             }
         }
     }

@@ -13,7 +13,9 @@ final class Params {
     var senseScale: Float  = 5.0     // scales sensed flow into the brain input
     var speedGain: Float   = 0.5     // brain axial output → speed modulation
     var cohesion: Float    = 0.05    // chemotaxis up the dye gradient → aggregation
-    var velDamp: Float     = 0.95    // fluid energy bleed / frame
+    var viscosity: Float   = 0.12    // ν∇² scale-selective viscosity — the FAITHFUL fix vs uniform drag
+    var dipoleLen: Float   = 2.5     // net-zero force-dipole separation (cells) — faithful swimmer forcing
+    var velDamp: Float     = 0.95    // weak large-scale (Rayleigh) drag / frame; raise → 1 to let ν∇² dominate
     var dyeDecay: Float    = 0.985   // dye fade / frame
     var forceGain: Float   = 0.5     // agent velocity → fluid forcing
     var pointAlpha: Float  = 0.10    // agent dot brightness
@@ -63,6 +65,8 @@ let engineKnobs: [Knob] = [
     Knob(name: "senseScale",  kp: \.senseScale,  lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Particles"),
     Knob(name: "speedGain",   kp: \.speedGain,   lo: 0.0,   hi: 2.0,   step: 0.05,  group: "Particles"),
     Knob(name: "cohesion",    kp: \.cohesion,    lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Particles"),
+    Knob(name: "viscosity",   kp: \.viscosity,   lo: 0.0,   hi: 0.25,  step: 0.01,  group: "Particles"),
+    Knob(name: "dipoleLen",   kp: \.dipoleLen,   lo: 0.0,   hi: 6.0,   step: 0.5,   group: "Particles"),
     Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05,  group: "Particles"),
     Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25,  group: "Particles"),
     Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005, group: "Particles"),

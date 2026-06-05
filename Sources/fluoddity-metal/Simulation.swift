@@ -35,7 +35,7 @@ final class Simulation {
     let particleBuffer: MTLBuffer
     let ruleBuffer: MTLBuffer          // 20 float4: [0..9] freqs, [10..19] amps
 
-    private let scalePipe, advectVelPipe, splatPipe, mouseStirPipe, divPipe,
+    private let scalePipe, advectVelPipe, diffusePipe, splatPipe, mouseStirPipe, divPipe,
                 jacobiPipe, subGradPipe, advectDyePipe, movePipe, blurPipe,
                 vortPipe: MTLComputePipelineState
 
@@ -83,6 +83,7 @@ final class Simulation {
         }
         scalePipe     = pipe("scale_buffer")
         advectVelPipe = pipe("advect_velocity")
+        diffusePipe   = pipe("diffuse_velocity")
         splatPipe     = pipe("splat")
         mouseStirPipe = pipe("mouse_stir")
         divPipe       = pipe("divergence")
@@ -103,7 +104,9 @@ final class Simulation {
         var dimv = dim
         var countv = UInt32(particleCount)
         var velDampv = params.velDamp
+        var viscv = min(params.viscosity, 0.24)   // clamp below the explicit-diffusion stability limit
         var forceGainv = params.forceGain
+        var dipoleLenv = params.dipoleLen
         var dyeAmtv = dyeAmount
         var dyeDecayv = params.dyeDecay
         var mp = MoveParamsGPU(swim: params.swim, sensorDist: params.sensorDist,
@@ -117,7 +120,18 @@ final class Simulation {
             e.setBuffer(self.velTmp, offset: 0, index: 1)
             e.setBytes(&dimv, length: 8, index: 2)
         }
-        // 2. damp velTmp (over 2N scalars)
+        // 1b. viscous diffusion ν∇² (the FAITHFUL fix vs uniform drag): diffuse
+        //     velTmp → vel (scratch), then swap so velTmp holds the diffused field.
+        //     `vel` is free scratch here — advect already consumed it; the final
+        //     swap (after projection) restores the projected field into `vel`.
+        field(cmd, diffusePipe) { e in
+            e.setBuffer(self.velTmp, offset: 0, index: 0)
+            e.setBuffer(self.vel, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 8, index: 2)
+            e.setBytes(&viscv, length: 4, index: 3)
+        }
+        swap(&vel, &velTmp)
+        // 2. weak large-scale drag on velTmp (Rayleigh; viscosity does the cascade)
         elementwise(cmd, scalePipe, count: 2 * n) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBytes(&velDampv, length: 4, index: 1)
@@ -130,6 +144,7 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 3)
             e.setBytes(&forceGainv, length: 4, index: 4)
             e.setBytes(&dyeAmtv, length: 4, index: 5)
+            e.setBytes(&dipoleLenv, length: 4, index: 6)
         }
         // 3b. mouse stir (force + dye), only while dragging
         if mouse.active {
