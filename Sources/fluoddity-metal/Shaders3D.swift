@@ -276,7 +276,7 @@ enum Shaders3D {
         float tf = min(min(tmx.x, tmx.y), tmx.z);
         if (tf <= max(tn, 0.0)) return float4(bg, 1.0);
         tn = max(tn, 0.0);
-        const int STEPS = 96;
+        const int STEPS = 224;   // ~1 sample/cell across a 160³ volume (was 96 → undersampled/banded)
         float dt = (tf - tn) / float(STEPS);
         float3 acc = float3(0.0); float trans = 1.0;
         for (int i = 0; i < STEPS; i++) {

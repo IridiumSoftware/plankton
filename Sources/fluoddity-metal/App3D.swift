@@ -9,6 +9,7 @@ final class App3D: NSObject, NSApplicationDelegate {
     private var renderer: Renderer3D!
     private var panel: Panel3D!
     private var help: HelpView!
+    private var captureLabel: NSTextField!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -57,16 +58,46 @@ final class App3D: NSObject, NSApplicationDelegate {
         panel.autoresizingMask = [.maxXMargin, .minYMargin]
         container.addSubview(panel)
 
+        // capture: bind the param read/write to the 3D knobs, route the capture keys
+        renderer.paramRead = { knobs.map { $0.get() } }
+        renderer.paramWrite = { i, v in if i < knobs.count { knobs[i].set(v) } }
+        view.onKey = { [weak self] key in
+            guard let self else { return }
+            switch key {
+            case "c": self.renderer.captureCreature()
+            case "x": self.renderer.restoreCreature(); self.panel.refresh()
+            case "j": self.renderer.recordPathToggle()
+            case "k": self.renderer.replayLastPath(); self.panel.refresh()
+            default: break
+            }
+        }
+
         // keyboard-help button (bottom-left; expands upward)
         help = HelpView(text: """
         drag      orbit camera
         scroll    zoom
         r         re-roll brain
         [  /  ]   dim / brighten volume
+        c / x     capture creature / restore (cycle)
+        j / k     record path (toggle) / replay path
         """)
         help.setFrameOrigin(NSPoint(x: 12, y: 12))
         help.autoresizingMask = [.maxXMargin, .maxYMargin]
         container.addSubview(help)
+
+        // capture-zoo status (bottom-right): which 3D creature slot is loaded/saved
+        captureLabel = NSTextField(frame: NSRect(x: frame.width - 412, y: 12, width: 400, height: 22))
+        captureLabel.isEditable = false
+        captureLabel.isBordered = false
+        captureLabel.drawsBackground = true
+        captureLabel.backgroundColor = NSColor(white: 0, alpha: 0.55)
+        captureLabel.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.4, alpha: 1)
+        captureLabel.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+        captureLabel.alignment = .right
+        captureLabel.stringValue = "capture: c save · x load · j/k path"
+        captureLabel.autoresizingMask = [.minXMargin, .maxYMargin]
+        container.addSubview(captureLabel)
+        renderer.onCaptureStatus = { [weak self] s in self?.captureLabel.stringValue = s }
 
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],

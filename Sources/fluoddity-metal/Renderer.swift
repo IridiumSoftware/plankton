@@ -96,7 +96,8 @@ final class Renderer: NSObject, MTKViewDelegate {
             let url = journal.stopRecordingAndSave()
             onCaptureStatus?("■ saved \(url?.deletingPathExtension().lastPathComponent ?? "path")")
         } else {
-            journal.startRecording(startState: sim.serializeState(params), params)
+            journal.startRecording(startState: sim.serializeState(params),
+                                   read: { engineKnobs.map { self.params[keyPath: $0.kp] } })
             onCaptureStatus?("● REC path — tune, then press j to save")
         }
     }
@@ -147,8 +148,8 @@ final class Renderer: NSObject, MTKViewDelegate {
 
         // path capture/replay: apply this frame's scheduled param changes (replay) and
         // record any manual changes (record). No-ops unless one mode is active.
-        journal.tickReplay(params)
-        journal.tickRecord(params)
+        journal.tickReplay { i, v in self.params[keyPath: engineKnobs[i].kp] = v }
+        journal.tickRecord { engineKnobs.map { self.params[keyPath: $0.kp] } }
 
         // research-viz HUD: compute diagnostics a few times a second from the
         // last completed frame's fields (before this frame's encode touches them)

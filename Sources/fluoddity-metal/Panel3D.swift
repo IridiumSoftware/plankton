@@ -17,6 +17,7 @@ final class Panel3D: NSView {
 
     private let knobs: [Knob3D]
     private var valueLabels: [NSTextField] = []
+    private var sliders: [NSSlider] = []
 
     init(knobs: [Knob3D]) {
         self.knobs = knobs
@@ -53,6 +54,7 @@ final class Panel3D: NSView {
             s.target = self
             s.action = #selector(sliderChanged(_:))
             s.tag = i
+            sliders.append(s)
             addSubview(s)
 
             let v = label(fmt(k.get()), NSRect(x: 250, y: y, width: 42, height: 18), .right)
@@ -62,6 +64,14 @@ final class Panel3D: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    // Re-sync every slider + value label from the knobs (after a creature restore / path replay).
+    func refresh() {
+        for (i, k) in knobs.enumerated() {
+            sliders[i].doubleValue = Double(k.get())
+            valueLabels[i].stringValue = fmt(k.get())
+        }
+    }
 
     @objc private func brain() { onReroll?() }
 

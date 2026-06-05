@@ -199,6 +199,39 @@ final class Sim3D {
         print("3D brain re-rolled")
     }
 
+    // ── full-state capture: vel + dye + particles + brain + the param values (extra) ──
+    func serializeState(_ extra: [Float]) -> Data {
+        var data = Data()
+        func putI(_ v: Int32) { var x = v; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
+        putI(0x464C5533); putI(1)                                  // magic "FLU3", version
+        putI(Int32(dim.x)); putI(Int32(count))
+        for b in [vel, dye, particleBuffer, ruleBuffer] { data.append(Data(bytes: b.contents(), count: b.length)) }
+        putI(Int32(extra.count))
+        for v in extra { var vv = v; withUnsafeBytes(of: &vv) { data.append(contentsOf: $0) } }
+        return data
+    }
+
+    @discardableResult
+    func applyState(_ data: Data) -> [Float]? {
+        var out: [Float]? = nil
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard raw.count >= 16 else { return }
+            var off = 0
+            func i32() -> Int32 { let v = raw.loadUnaligned(fromByteOffset: off, as: Int32.self); off += 4; return v }
+            guard i32() == 0x464C5533 else { print("3D capture: bad magic"); return }
+            _ = i32()
+            let fd = Int(i32()), c = Int(i32())
+            guard fd == Int(dim.x), c == count else { print("3D capture: dims mismatch (\(fd)/\(c) vs \(Int(dim.x))/\(count))"); return }
+            for b in [vel, dye, particleBuffer, ruleBuffer] {
+                memcpy(b.contents(), raw.baseAddress!.advanced(by: off), b.length); off += b.length
+            }
+            let np = Int(i32()); var p = [Float]()
+            for _ in 0..<np { p.append(raw.loadUnaligned(fromByteOffset: off, as: Float.self)); off += 4 }
+            out = p
+        }
+        return out
+    }
+
     private func field(_ cmd: MTLCommandBuffer, _ p: MTLComputePipelineState,
                        _ setup: (MTLComputeCommandEncoder) -> Void) {
         guard let e = cmd.makeComputeCommandEncoder() else { return }

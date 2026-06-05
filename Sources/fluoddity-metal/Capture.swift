@@ -34,33 +34,34 @@ final class PathJournal {
     private var changes: [(Int32, Int32, Float)] = []     // (frame, knobIndex, value)
     private var startState = Data()
 
-    // begin recording from the current canvas (pass the full serialized start state)
-    func startRecording(startState: Data, _ params: Params) {
+    // begin recording from the current canvas. `read` returns the current knob values
+    // (works for any param source — 2D Params keypaths or 3D Knob3D closures).
+    func startRecording(startState: Data, read: () -> [Float]) {
         self.startState = startState; changes.removeAll(); frame = 0
-        last = engineKnobs.map { params[keyPath: $0.kp] }
+        last = read()
         recording = true; replaying = false
         print("● recording path — tune to grow a creature, press j again to stop")
     }
 
-    // call once per frame while recording: snapshot params, record any that changed
-    func tickRecord(_ params: Params) {
+    // call once per frame while recording: snapshot the knobs, record any that changed
+    func tickRecord(_ read: () -> [Float]) {
         guard recording else { return }
         frame += 1
-        for (i, k) in engineKnobs.enumerated() {
-            let v = params[keyPath: k.kp]
-            if v != last[i] { changes.append((Int32(frame), Int32(i), v)); last[i] = v }
+        let cur = read()
+        for i in 0..<min(cur.count, last.count) {
+            if cur[i] != last[i] { changes.append((Int32(frame), Int32(i), cur[i])); last[i] = cur[i] }
         }
     }
 
     @discardableResult
-    func stopRecordingAndSave() -> URL? {
+    func stopRecordingAndSave(_ sub: String = "paths", _ prefix: String = "path", _ ext: String = "fluopath") -> URL? {
         recording = false
         var data = Data()
         func putI(_ v: Int32) { var x = v; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
         putI(Int32(startState.count)); data.append(startState)
         putI(Int32(changes.count))
         for (f, i, v) in changes { putI(f); putI(i); var vv = v; withUnsafeBytes(of: &vv) { data.append(contentsOf: $0) } }
-        let url = Captures.nextURL("paths", "path", "fluopath")
+        let url = Captures.nextURL(sub, prefix, ext)
         try? data.write(to: url)
         print("■ saved \(url.lastPathComponent) — \(changes.count) param changes over \(frame) frames")
         return url
@@ -91,9 +92,9 @@ final class PathJournal {
     }
 
     // call once per frame while replaying: apply any param changes scheduled for this frame
-    func tickReplay(_ params: Params) {
+    func tickReplay(_ write: (Int, Float) -> Void) {
         guard replaying else { return }
-        for (f, i, v) in changes where Int(f) == frame { params[keyPath: engineKnobs[Int(i)].kp] = v }
+        for (f, i, v) in changes where Int(f) == frame { write(Int(i), v) }
         frame += 1
         if frame > Int(changes.last?.0 ?? 0) + 180 { replaying = false; print("▶ replay done") }
     }

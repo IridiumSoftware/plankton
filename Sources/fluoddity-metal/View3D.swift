@@ -5,6 +5,7 @@ final class View3D: MTKView {
     var camera: Camera3D?
     var onReroll: (() -> Void)?
     var onDensity: ((Float) -> Void)?
+    var onKey: ((String) -> Void)?          // capture keys (c/x/j/k) → App3D
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -13,7 +14,7 @@ final class View3D: MTKView {
         case "r": onReroll?()
         case "[": onDensity?(0.83)   // dimmer volume
         case "]": onDensity?(1.2)    // denser volume
-        default: break
+        default: if let s = e.charactersIgnoringModifiers { onKey?(s) }
         }
     }
 
