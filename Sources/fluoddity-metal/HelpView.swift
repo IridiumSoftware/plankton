@@ -23,8 +23,15 @@ final class HelpView: NSView {
         expandedSize = NSSize(width: w, height: h)
         super.init(frame: NSRect(origin: .zero, size: collapsedSize))
 
-        button.bezelStyle = .rounded
-        button.font = .systemFont(ofSize: 11)
+        button.isBordered = false          // bordered NSButtons vanish on the dark canvas
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 5
+        button.layer?.borderWidth = 1.2
+        button.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.27, blue: 0.40, alpha: 0.98).cgColor
+        button.layer?.borderColor = NSColor(calibratedRed: 0.45, green: 0.82, blue: 1.0, alpha: 0.95).cgColor
+        button.attributedTitle = NSAttributedString(string: "⌨ Controls", attributes: [
+            .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.96, blue: 1.0, alpha: 1.0),
+            .font: NSFont.boldSystemFont(ofSize: 11)])
         button.frame = NSRect(origin: .zero, size: collapsedSize)
         button.target = self
         button.action = #selector(expand)

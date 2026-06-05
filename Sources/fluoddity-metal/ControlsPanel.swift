@@ -16,6 +16,7 @@ final class ControlsPanel: NSView {
     private let knobs: [Knob]
     private var sliders: [NSSlider] = []
     private var valueLabels: [NSTextField] = []
+    private var diagButton: NSButton?
 
     init(params: Params, knobs: [Knob]) {
         self.params = params
@@ -33,15 +34,20 @@ final class ControlsPanel: NSView {
         layer?.backgroundColor = NSColor(white: 0, alpha: 0.55).cgColor
         layer?.cornerRadius = 8
 
-        // button row (top): 5 actions + a Diag on/off toggle
+        // button row (top): 5 actions + a Diag on/off toggle. Custom-styled (bordered
+        // NSButtons render with no contrast on the dark translucent panel) — a solid
+        // dark-teal fill + a bright border + bold bright text so they POP on the dark UI.
         let titles = ["Save", "Load", "Reset", "Brain", "Avg", "Diag"]
         for (i, title) in titles.enumerated() {
             let b = NSButton(title: title, target: self, action: #selector(buttonClicked(_:)))
-            b.bezelStyle = .rounded
-            b.font = .systemFont(ofSize: 11)
             b.tag = i
-            if i == 5 { b.setButtonType(.pushOnPushOff); b.state = .on }   // Diag toggle (on)
+            b.isBordered = false
+            b.wantsLayer = true
+            b.layer?.cornerRadius = 5
+            b.layer?.borderWidth = 1.2
             b.frame = NSRect(x: 8 + CGFloat(i) * 52, y: height - pad - btnH + 2, width: 50, height: 24)
+            if i == 5 { b.setButtonType(.pushOnPushOff); b.state = .on; diagButton = b; styleToggle(b, on: true) }
+            else { styleAction(b, title) }
             addSubview(b)
         }
 
@@ -101,12 +107,33 @@ final class ControlsPanel: NSView {
         case 2: onReset?()
         case 3: onReroll?()
         case 4: onResetAvg?()
-        case 5: onToggleDiag?(b.state == .on)
+        case 5: let on = (b.state == .on); styleToggle(b, on: on); onToggleDiag?(on)
         default: break
         }
     }
 
     private func fmt(_ v: Float) -> String { String(format: "%.3f", v) }
+
+    // ── high-contrast button styling (so the controls pop on the dark panel) ──
+    private func styleAction(_ b: NSButton, _ title: String) {
+        b.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.27, blue: 0.40, alpha: 0.98).cgColor
+        b.layer?.borderColor = NSColor(calibratedRed: 0.45, green: 0.82, blue: 1.0, alpha: 0.95).cgColor
+        b.attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.96, blue: 1.0, alpha: 1.0),
+            .font: NSFont.boldSystemFont(ofSize: 11)])
+    }
+    private func styleToggle(_ b: NSButton, on: Bool) {
+        let bg  = on ? NSColor(calibratedRed: 0.13, green: 0.52, blue: 0.42, alpha: 0.98)
+                     : NSColor(calibratedRed: 0.20, green: 0.20, blue: 0.23, alpha: 0.95)
+        let brd = on ? NSColor(calibratedRed: 0.40, green: 1.00, blue: 0.70, alpha: 0.95)
+                     : NSColor(calibratedRed: 0.50, green: 0.50, blue: 0.55, alpha: 0.90)
+        let txt = on ? NSColor(calibratedRed: 0.88, green: 1.00, blue: 0.92, alpha: 1.0)
+                     : NSColor(calibratedRed: 0.62, green: 0.62, blue: 0.68, alpha: 1.0)
+        b.layer?.backgroundColor = bg.cgColor
+        b.layer?.borderColor = brd.cgColor
+        b.attributedTitle = NSAttributedString(string: on ? "Diag●" : "Diag○",
+            attributes: [.foregroundColor: txt, .font: NSFont.boldSystemFont(ofSize: 11)])
+    }
 
     private func header(_ s: String, _ frame: NSRect) -> NSTextField {
         let t = label(s.uppercased(), frame, .left)
