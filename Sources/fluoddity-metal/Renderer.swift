@@ -16,6 +16,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let pointsPipe: MTLRenderPipelineState
     var onDiagnostics: ((Diag) -> Void)?       // diagnostics sink (set by AppDelegate)
     var onSpectrum: (([Float], Int) -> Void)?  // energy spectrum E(k) + avg frame count
+    var onCaptureStatus: ((String) -> Void)?   // capture/restore/path status → on-screen slot label
     private let spectrum = Spectrum(n: 1024)   // == fieldDim: full-res, no aliasing
     private var hudFrame = 0
     private let journal = PathJournal()        // param-trajectory record/replay (capture paths)
@@ -69,23 +70,42 @@ final class Renderer: NSObject, MTKViewDelegate {
     var isReplaying: Bool { journal.replaying }
     func captureCreature() {                                   // c
         let url = Captures.nextURL("creatures", "creature", "fluo")
-        do { try sim.serializeState(params).write(to: url); print("📸 captured \(url.lastPathComponent)") }
-        catch { print("capture failed: \(error)") }
+        do {
+            try sim.serializeState(params).write(to: url)
+            let name = url.deletingPathExtension().lastPathComponent
+            creatureLoadIdx = Captures.list("creatures", "fluo").firstIndex(of: url) ?? creatureLoadIdx
+            let n = Captures.list("creatures", "fluo").count
+            print("📸 captured \(url.lastPathComponent)")
+            onCaptureStatus?("⦿ \(name)   (\(n)/\(n) — captured)")
+        } catch { print("capture failed: \(error)"); onCaptureStatus?("capture failed") }
     }
     func restoreCreature() {                                   // x — cycles through captures
         let files = Captures.list("creatures", "fluo")
-        guard !files.isEmpty else { print("no creatures captured yet (press c)"); return }
+        guard !files.isEmpty else { print("no creatures captured yet (press c)"); onCaptureStatus?("no creatures yet — press c"); return }
         creatureLoadIdx = (creatureLoadIdx + 1) % files.count
         guard let data = try? Data(contentsOf: files[creatureLoadIdx]) else { return }
-        if sim.applyState(data, params) { spectrum.resetAverage(); print("↩︎ restored \(files[creatureLoadIdx].lastPathComponent)") }
+        if sim.applyState(data, params) {
+            spectrum.resetAverage()
+            let name = files[creatureLoadIdx].deletingPathExtension().lastPathComponent
+            print("↩︎ restored \(files[creatureLoadIdx].lastPathComponent)")
+            onCaptureStatus?("◆ \(name)   (\(creatureLoadIdx + 1)/\(files.count) — loaded)")
+        }
     }
     func recordPathToggle() {                                  // j — start/stop recording
-        if journal.recording { journal.stopRecordingAndSave() }
-        else { journal.startRecording(startState: sim.serializeState(params), params) }
+        if journal.recording {
+            let url = journal.stopRecordingAndSave()
+            onCaptureStatus?("■ saved \(url?.deletingPathExtension().lastPathComponent ?? "path")")
+        } else {
+            journal.startRecording(startState: sim.serializeState(params), params)
+            onCaptureStatus?("● REC path — tune, then press j to save")
+        }
     }
     func replayLastPath() {                                    // k — replay the latest path
-        guard let url = Captures.list("paths", "fluopath").last else { print("no paths recorded yet (press j)"); return }
-        if let start = journal.beginReplay(url) { sim.applyState(start, params); spectrum.resetAverage() }
+        guard let url = Captures.list("paths", "fluopath").last else { print("no paths recorded yet (press j)"); onCaptureStatus?("no paths yet — press j"); return }
+        if let start = journal.beginReplay(url) {
+            sim.applyState(start, params); spectrum.resetAverage()
+            onCaptureStatus?("▶ replaying \(url.deletingPathExtension().lastPathComponent)")
+        }
     }
 
     // Full-field CPU reductions for the research HUD (caller throttles the rate):
