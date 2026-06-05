@@ -20,6 +20,10 @@ if CommandLine.arguments.contains("--simtest") {
     runSimTest()
     exit(0)
 }
+if CommandLine.arguments.contains("--capturetest") {
+    runCaptureTest()
+    exit(0)
+}
 if CommandLine.arguments.contains("--3dtest") {
     runSim3DTest()
     exit(0)

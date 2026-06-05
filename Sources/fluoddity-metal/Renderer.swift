@@ -18,6 +18,8 @@ final class Renderer: NSObject, MTKViewDelegate {
     var onSpectrum: (([Float], Int) -> Void)?  // energy spectrum E(k) + avg frame count
     private let spectrum = Spectrum(n: 1024)   // == fieldDim: full-res, no aliasing
     private var hudFrame = 0
+    private let journal = PathJournal()        // param-trajectory record/replay (capture paths)
+    private var creatureLoadIdx = -1           // cycles through captured creatures on restore
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
         guard let q = device.makeCommandQueue() else {
@@ -63,6 +65,29 @@ final class Renderer: NSObject, MTKViewDelegate {
     func loadRule(_ floats: [Float]) { sim.loadRule(floats); spectrum.resetAverage() }
     func resetSpectrumAvg() { spectrum.resetAverage() }
 
+    // ── capture creatures (full state) + paths (parameter trajectory) ─────
+    var isReplaying: Bool { journal.replaying }
+    func captureCreature() {                                   // c
+        let url = Captures.nextURL("creatures", "creature", "fluo")
+        do { try sim.serializeState(params).write(to: url); print("📸 captured \(url.lastPathComponent)") }
+        catch { print("capture failed: \(error)") }
+    }
+    func restoreCreature() {                                   // x — cycles through captures
+        let files = Captures.list("creatures", "fluo")
+        guard !files.isEmpty else { print("no creatures captured yet (press c)"); return }
+        creatureLoadIdx = (creatureLoadIdx + 1) % files.count
+        guard let data = try? Data(contentsOf: files[creatureLoadIdx]) else { return }
+        if sim.applyState(data, params) { spectrum.resetAverage(); print("↩︎ restored \(files[creatureLoadIdx].lastPathComponent)") }
+    }
+    func recordPathToggle() {                                  // j — start/stop recording
+        if journal.recording { journal.stopRecordingAndSave() }
+        else { journal.startRecording(startState: sim.serializeState(params), params) }
+    }
+    func replayLastPath() {                                    // k — replay the latest path
+        guard let url = Captures.list("paths", "fluopath").last else { print("no paths recorded yet (press j)"); return }
+        if let start = journal.beginReplay(url) { sim.applyState(start, params); spectrum.resetAverage() }
+    }
+
     // Full-field CPU reductions for the research HUD (caller throttles the rate):
     // E = mean|u|², Z = mean ω² (enstrophy), |ω|max (intermittency), mean|div|
     // (should sit near 0 — the incompressibility holding).
@@ -99,6 +124,11 @@ final class Renderer: NSObject, MTKViewDelegate {
         guard let drawable = view.currentDrawable,
               let rpd = view.currentRenderPassDescriptor,
               let cmd = queue.makeCommandBuffer() else { return }
+
+        // path capture/replay: apply this frame's scheduled param changes (replay) and
+        // record any manual changes (record). No-ops unless one mode is active.
+        journal.tickReplay(params)
+        journal.tickRecord(params)
 
         // research-viz HUD: compute diagnostics a few times a second from the
         // last completed frame's fields (before this frame's encode touches them)

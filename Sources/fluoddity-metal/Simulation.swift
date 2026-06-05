@@ -278,6 +278,52 @@ final class Simulation {
         memcpy(ruleBuffer.contents(), &f, n * MemoryLayout<Float>.stride)
     }
 
+    // ── full-state capture: vel + dye + particles + brain + params → one blob ──
+    // Captures the EXACT grown configuration (every agent's pos+heading, the velocity
+    // and dye fields, the brains, and all params). The reliable way to "save a creature":
+    // because the system is hysteretic (AT-7), a creature can't be reproduced from
+    // params alone — only its full state replays it.
+    func serializeState(_ params: Params) -> Data {
+        let n = Int(dim.x) * Int(dim.y)
+        var data = Data()
+        func putI(_ v: Int32) { var x = v; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
+        func putBuf(_ b: MTLBuffer, _ floats: Int) { data.append(Data(bytes: b.contents(), count: floats * 4)) }
+        putI(0x464C554F); putI(1)                                  // magic "FLUO", version
+        putI(Int32(dim.x)); putI(Int32(particleCount)); putI(Int32(Simulation.nCohorts))
+        putBuf(vel, 2 * n); putBuf(dye, n)
+        putBuf(particleBuffer, particleCount * 4); putBuf(ruleBuffer, Simulation.nCohorts * 80)
+        putI(Int32(engineKnobs.count))
+        for k in engineKnobs { var v = params[keyPath: k.kp]; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
+        return data
+    }
+
+    @discardableResult
+    func applyState(_ data: Data, _ params: Params) -> Bool {
+        let n = Int(dim.x) * Int(dim.y); var ok = false
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard raw.count >= 20 else { return }
+            var off = 0
+            func i32() -> Int32 { let v = raw.loadUnaligned(fromByteOffset: off, as: Int32.self); off += 4; return v }
+            func getBuf(_ b: MTLBuffer, _ floats: Int) {
+                memcpy(b.contents(), raw.baseAddress!.advanced(by: off), floats * 4); off += floats * 4
+            }
+            guard i32() == 0x464C554F else { print("capture: bad magic"); return }
+            _ = i32()                                              // version
+            let fd = Int(i32()), pc = Int(i32()), ncoh = Int(i32())
+            guard fd == Int(dim.x), pc == particleCount, ncoh == Simulation.nCohorts else {
+                print("capture: dims mismatch (\(fd)/\(pc)/\(ncoh) vs \(Int(dim.x))/\(particleCount)/\(Simulation.nCohorts))"); return
+            }
+            getBuf(vel, 2 * n); getBuf(dye, n)
+            getBuf(particleBuffer, particleCount * 4); getBuf(ruleBuffer, Simulation.nCohorts * 80)
+            let np = Int(i32())
+            for (idx, k) in engineKnobs.enumerated() where idx < np {
+                params[keyPath: k.kp] = raw.loadUnaligned(fromByteOffset: off, as: Float.self); off += 4
+            }
+            ok = true
+        }
+        return ok
+    }
+
     // Generate nCohorts fresh random brains (each: 10 freq float4 + 10 amp float4).
     static func randomRule() -> [SIMD4<Float>] {
         var rng = SystemRandomNumberGenerator()

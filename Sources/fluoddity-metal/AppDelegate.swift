@@ -35,7 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tuning = Tuning(params: params)
         mtkView.onKey = { [weak self] key in
             guard let self else { return }
-            if key == "r" { self.renderer?.reroll() } else { self.tuning.handleKey(key) }
+            switch key {
+            case "r": self.renderer?.reroll()
+            case "c": self.renderer?.captureCreature()                       // capture creature (full state)
+            case "x": self.renderer?.restoreCreature(); self.controls?.refresh()  // restore (cycles captures)
+            case "j": self.renderer?.recordPathToggle()                      // record path (toggle)
+            case "k": self.renderer?.replayLastPath(); self.controls?.refresh()   // replay latest path
+            default: self.tuning.handleKey(key)
+            }
         }
         mtkView.mouseInput = mouse
 
@@ -97,6 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         drag         stir fluid + inject dye
         right-click  adopt + mutate cohort (breed)
         r            re-roll brains
+        c / x        capture creature / restore (cycle captures)
+        j / k        record path (toggle) / replay last path
         [ ] / - =    keyboard tuning (sliders are primary)
         space        print all params
         """)

@@ -7,8 +7,9 @@ DerivedData/
 *.xcworkspace
 xcuserdata/
 
-# user-saved presets
+# user-saved presets + captured creatures/paths
 presets/
+captures/
 
 # macOS
 .DS_Store
