@@ -8,9 +8,9 @@ struct Particle3D {
     var vel: SIMD3<Float>
 }
 
-// Mirrors `struct MoveParams3` in Shaders3D.source (8 floats, 32 bytes).
+// Mirrors `struct MoveParams3` in Shaders3D.source (9 floats, 36 bytes).
 struct MoveParams3GPU {
-    var swim, sensorDist, sensorAngle, turn, axialForce, fluidPull, senseScale, planeSamples: Float
+    var swim, sensorDist, sensorAngle, turn, axialForce, fluidPull, senseScale, planeSamples, cohesion: Float
 }
 
 // Stage-2a 3D simulation: agents force a 128³ incompressible fluid and ride it.
@@ -29,10 +29,12 @@ final class Sim3D {
     private(set) var dye: MTLBuffer            // 3D density volume (rendered)
     private var dyeTmp: MTLBuffer
 
-    private let scalePipe, advectPipe, splatPipe, divPipe, jacobiPipe,
+    private let scalePipe, advectPipe, diffusePipe, splatPipe, divPipe, jacobiPipe,
                 subPipe, movePipe, advectDyePipe: MTLComputePipelineState
 
-    var velDamp: Float = 0.96
+    var velDamp: Float = 0.97        // weak large-scale drag; viscosity does the cascade
+    var viscosity: Float = 0.10      // ν∇² scale-selective viscosity — the FAITHFUL fix vs uniform drag
+    var dipoleLen: Float = 2.5       // net-zero force-dipole separation (cells)
     var forceGain: Float = 0.5
     var fluidPull: Float = 2.0
     var jacobiIters: Int = 25
@@ -44,6 +46,7 @@ final class Sim3D {
     var axialForce: Float = 0.02
     var senseScale: Float = 3.0
     var planeSamples: Float = 2
+    var cohesion: Float = 0.15       // chemotaxis up the dye gradient → aggregation (the creature-maker)
     var dyeDecay: Float = 0.985
     var dyeAmount: Float = 1.0
     private var frame: UInt32 = 0
@@ -91,6 +94,7 @@ final class Sim3D {
             return try! device.makeComputePipelineState(function: fn)
         }
         scalePipe = pipe("scale3d"); advectPipe = pipe("advect3d"); splatPipe = pipe("splat3d")
+        diffusePipe = pipe("diffuse3d")
         divPipe = pipe("divergence3d"); jacobiPipe = pipe("jacobi3d")
         subPipe = pipe("subgrad3d"); movePipe = pipe("move3d")
         advectDyePipe = pipe("advectDye3d")
@@ -100,17 +104,29 @@ final class Sim3D {
         let fieldDim = Int(dim.x)
         let n3 = fieldDim * fieldDim * fieldDim
         var dimv = dim, velDampv = velDamp, forceGainv = forceGain
+        var viscv = min(viscosity, 0.16)   // clamp below the 3D explicit-diffusion stability limit (1/6)
 
         field(cmd, advectPipe) { e in
             e.setBuffer(self.vel, offset: 0, index: 0)
             e.setBuffer(self.velTmp, offset: 0, index: 1)
             e.setBytes(&dimv, length: 16, index: 2)
         }
+        // viscous diffusion ν∇² (the FAITHFUL fix vs uniform drag): velTmp → vel
+        // scratch, then swap so velTmp holds the diffused field (vel is restored by
+        // the post-projection swap below).
+        field(cmd, diffusePipe) { e in
+            e.setBuffer(self.velTmp, offset: 0, index: 0)
+            e.setBuffer(self.vel, offset: 0, index: 1)
+            e.setBytes(&dimv, length: 16, index: 2)
+            e.setBytes(&viscv, length: 4, index: 3)
+        }
+        swap(&vel, &velTmp)
         elementwise(cmd, scalePipe, 3 * n3) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBytes(&velDampv, length: 4, index: 1)
         }
         var dyeAmtv = dyeAmount
+        var dipoleLenv = dipoleLen
         particles(cmd, splatPipe) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBuffer(self.dye, offset: 0, index: 1)
@@ -118,6 +134,7 @@ final class Sim3D {
             e.setBytes(&dimv, length: 16, index: 3)
             e.setBytes(&forceGainv, length: 4, index: 4)
             e.setBytes(&dyeAmtv, length: 4, index: 5)
+            e.setBytes(&dipoleLenv, length: 4, index: 6)
         }
         field(cmd, divPipe) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
@@ -152,7 +169,7 @@ final class Sim3D {
         var framev = frame
         var mp = MoveParams3GPU(swim: swim, sensorDist: sensorDist, sensorAngle: sensorAngle,
                                 turn: turn, axialForce: axialForce, fluidPull: fluidPull,
-                                senseScale: senseScale, planeSamples: planeSamples)
+                                senseScale: senseScale, planeSamples: planeSamples, cohesion: cohesion)
         particles(cmd, movePipe) { e in
             e.setBuffer(self.particleBuffer, offset: 0, index: 0)
             e.setBuffer(self.vel, offset: 0, index: 1)
@@ -160,6 +177,7 @@ final class Sim3D {
             e.setBytes(&mp, length: MemoryLayout<MoveParams3GPU>.stride, index: 3)
             e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
             e.setBytes(&framev, length: 4, index: 5)
+            e.setBuffer(self.dye, offset: 0, index: 6)
         }
     }
 

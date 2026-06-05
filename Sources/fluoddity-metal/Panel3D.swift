@@ -29,8 +29,15 @@ final class Panel3D: NSView {
         layer?.cornerRadius = 8
 
         let b = NSButton(title: "Brain", target: self, action: #selector(brain))
-        b.bezelStyle = .rounded
-        b.font = .systemFont(ofSize: 11)
+        b.isBordered = false            // bordered NSButtons vanish on the dark panel
+        b.wantsLayer = true
+        b.layer?.cornerRadius = 5
+        b.layer?.borderWidth = 1.2
+        b.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.27, blue: 0.40, alpha: 0.98).cgColor
+        b.layer?.borderColor = NSColor(calibratedRed: 0.45, green: 0.82, blue: 1.0, alpha: 0.95).cgColor
+        b.attributedTitle = NSAttributedString(string: "Brain", attributes: [
+            .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.96, blue: 1.0, alpha: 1.0),
+            .font: NSFont.boldSystemFont(ofSize: 11)])
         b.frame = NSRect(x: 8, y: height - pad - btnH + 2, width: 80, height: 24)
         addSubview(b)
 

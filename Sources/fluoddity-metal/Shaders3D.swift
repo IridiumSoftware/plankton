@@ -14,7 +14,7 @@ enum Shaders3D {
     using namespace metal;
 
     struct Particle3D { float3 pos; float3 vel; };
-    struct MoveParams3 { float swim; float sensorDist; float sensorAngle; float turn; float axialForce; float fluidPull; float senseScale; float planeSamples; };
+    struct MoveParams3 { float swim; float sensorDist; float sensorAngle; float turn; float axialForce; float fluidPull; float senseScale; float planeSamples; float cohesion; };
     constant float AGENT_DT3 = 0.0167;
 
     static inline int wrp(int a, int n) { return ((a % n) + n) % n; }
@@ -52,6 +52,24 @@ enum Shaders3D {
     kernel void scale3d(device float *buf [[buffer(0)]], constant float &k [[buffer(1)]],
                         uint i [[thread_position_in_grid]]) { buf[i] *= k; }
 
+    // viscous diffusion ν∇²v (explicit 6-point 3D Laplacian) — the FAITHFUL fix for
+    // fluoddity's uniform drag. Real viscosity is k²-SELECTIVE (kills small scales,
+    // spares large ⇒ an inertial range / cascade); uniform drag damped every mode
+    // equally ⇒ no cascade. Stable for visc ≤ 1/6 (3D explicit-diffusion limit).
+    kernel void diffuse3d(device const float *vin [[buffer(0)]], device float *vout [[buffer(1)]],
+                          constant uint3 &d [[buffer(2)]], constant float &visc [[buffer(3)]],
+                          uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        int x = int(gid.x), y = int(gid.y), z = int(gid.z);
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        float3 c = float3(vin[3*i], vin[3*i+1], vin[3*i+2]);
+        float3 lap = vat(vin, x-1,y,z, d) + vat(vin, x+1,y,z, d)
+                   + vat(vin, x,y-1,z, d) + vat(vin, x,y+1,z, d)
+                   + vat(vin, x,y,z-1, d) + vat(vin, x,y,z+1, d) - 6.0 * c;
+        float3 o = c + visc * lap;
+        vout[3*i] = o.x; vout[3*i+1] = o.y; vout[3*i+2] = o.z;
+    }
+
     // 1. advect velocity (semi-Lagrangian backtrace)
     kernel void advect3d(device const float *vin [[buffer(0)]], device float *vout [[buffer(1)]],
                          constant uint3 &d [[buffer(2)]], uint3 gid [[thread_position_in_grid]]) {
@@ -62,19 +80,10 @@ enum Shaders3D {
         vout[3 * i] = sv.x; vout[3 * i + 1] = sv.y; vout[3 * i + 2] = sv.z;
     }
 
-    // 2. splat agent velocities (forcing) + dye (volume density), trilinear atomic
-    kernel void splat3d(device atomic_float *vel  [[buffer(0)]],
-                        device atomic_float *dye   [[buffer(1)]],
-                        device const Particle3D *parts [[buffer(2)]],
-                        constant uint3 &d          [[buffer(3)]],
-                        constant float &gain       [[buffer(4)]],
-                        constant float &dyeAmt     [[buffer(5)]],
-                        uint gid [[thread_position_in_grid]]) {
-        Particle3D p = parts[gid];
-        float3 cell = p.pos * float3(d) - 0.5;
+    // trilinear force deposit at a grid point (cells) — used twice for the dipole
+    static inline void depositForce3(device atomic_float *vel, float3 cell, float3 f, uint3 d) {
         float3 fl = floor(cell); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z);
         float3 t = cell - fl;
-        float3 f = p.vel * gain;
         for (int k = 0; k < 2; k++) for (int j = 0; j < 2; j++) for (int ii = 0; ii < 2; ii++) {
             int xi = wrp(x0 + ii, int(d.x)), yi = wrp(y0 + j, int(d.y)), zi = wrp(z0 + k, int(d.z));
             float w = (ii == 0 ? 1 - t.x : t.x) * (j == 0 ? 1 - t.y : t.y) * (k == 0 ? 1 - t.z : t.z);
@@ -82,7 +91,34 @@ enum Shaders3D {
             atomic_fetch_add_explicit(&vel[3 * c],     f.x * w, memory_order_relaxed);
             atomic_fetch_add_explicit(&vel[3 * c + 1], f.y * w, memory_order_relaxed);
             atomic_fetch_add_explicit(&vel[3 * c + 2], f.z * w, memory_order_relaxed);
-            atomic_fetch_add_explicit(&dye[c],         dyeAmt * w, memory_order_relaxed);
+        }
+    }
+
+    // 2. agents force the fluid as a NET-ZERO force DIPOLE (+f ahead, −f behind ⇒
+    //    Σmomentum=0, the faithful active-swimmer forcing — the fix for the monopole
+    //    splat) + deposit dye (= local density, the chemotaxis signal) at the center.
+    kernel void splat3d(device atomic_float *vel  [[buffer(0)]],
+                        device atomic_float *dye   [[buffer(1)]],
+                        device const Particle3D *parts [[buffer(2)]],
+                        constant uint3 &d          [[buffer(3)]],
+                        constant float &gain       [[buffer(4)]],
+                        constant float &dyeAmt     [[buffer(5)]],
+                        constant float &dipoleLen  [[buffer(6)]],
+                        uint gid [[thread_position_in_grid]]) {
+        Particle3D p = parts[gid];
+        float3 center = p.pos * float3(d) - 0.5;
+        float speed = length(p.vel);
+        float3 fwd = speed > 1e-6 ? p.vel / speed : float3(1, 0, 0);
+        float3 f = p.vel * gain;
+        float3 h = fwd * (dipoleLen * 0.5);
+        depositForce3(vel, center + h,  f, d);   // +f ahead (head)
+        depositForce3(vel, center - h, -f, d);   // −f behind (tail) ⇒ net-zero
+        float3 fl = floor(center); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z);
+        float3 t = center - fl;
+        for (int k = 0; k < 2; k++) for (int j = 0; j < 2; j++) for (int ii = 0; ii < 2; ii++) {
+            int xi = wrp(x0 + ii, int(d.x)), yi = wrp(y0 + j, int(d.y)), zi = wrp(z0 + k, int(d.z));
+            float w = (ii == 0 ? 1 - t.x : t.x) * (j == 0 ? 1 - t.y : t.y) * (k == 0 ? 1 - t.z : t.z);
+            atomic_fetch_add_explicit(&dye[(uint(zi) * d.y + uint(yi)) * d.x + uint(xi)], dyeAmt * w, memory_order_relaxed);
         }
     }
 
@@ -140,6 +176,7 @@ enum Shaders3D {
                        constant MoveParams3 &mp    [[buffer(3)]],
                        device const float4 *rule   [[buffer(4)]],
                        constant uint &frame        [[buffer(5)]],
+                       device const float *dye     [[buffer(6)]],
                        uint gid [[thread_position_in_grid]]) {
         Particle3D p = parts[gid];
         float3 dd = float3(d);
@@ -173,6 +210,14 @@ enum Shaders3D {
             force += fwd * (axial * mp.axialForce) + w * (turnT * mp.turn);
         }
         force /= float(nS);
+
+        // chemotaxis: steer up the dye (density) gradient → aggregation. THIS is the
+        // creature-maker (AT-5); without it velocity-sensing agents stay uniform (AT-4).
+        float sd = mp.sensorDist;
+        float gx = sampleScalar3(dye, (p.pos + float3(sd,0,0)) * dd, d) - sampleScalar3(dye, (p.pos - float3(sd,0,0)) * dd, d);
+        float gy = sampleScalar3(dye, (p.pos + float3(0,sd,0)) * dd, d) - sampleScalar3(dye, (p.pos - float3(0,sd,0)) * dd, d);
+        float gz = sampleScalar3(dye, (p.pos + float3(0,0,sd)) * dd, d) - sampleScalar3(dye, (p.pos - float3(0,0,sd)) * dd, d);
+        force += float3(gx, gy, gz) * mp.cohesion;
 
         float3 nv = p.vel + force;
         float ns = length(nv);
