@@ -29,16 +29,23 @@ Requires macOS on Apple Silicon, the Swift toolchain (**Command Line Tools is
 enough — no full Xcode**), and Metal. Shaders are compiled at runtime.
 
 ```sh
-swift run fluoddity-metal            # 2D engine (the main app)
-swift run fluoddity-metal --3d       # 3D engine (orbital, volumetric)
+swift run fluoddity-metal               # 2D engine (the main app)
+swift run fluoddity-metal --3d          # 3D engine (orbital, volumetric)
 
 # headless verification (no window — runs the compute path + checks):
-swift run fluoddity-metal --smoke    # toolchain / atomic_float
-swift run fluoddity-metal --simtest  # 2D fluid incompressibility + stability
-swift run fluoddity-metal --3dtest   # 3D fluid incompressibility + stability
-swift run fluoddity-metal --spectest # FFT energy-spectrum estimator check
-swift run fluoddity-metal --sweep    # parameter survey       → sweep_results.csv
-swift run fluoddity-metal --map      # drive×dissipation map  → map_results.csv
+swift run fluoddity-metal --smoke       # toolchain / atomic_float
+swift run fluoddity-metal --simtest     # 2D fluid incompressibility + stability
+swift run fluoddity-metal --3dtest      # 3D fluid incompressibility + stability
+swift run fluoddity-metal --capturetest # full-state capture round-trips bit-for-bit
+swift run fluoddity-metal --spectest    # FFT energy-spectrum estimator check
+
+# headless studies (write CSVs; see docs/spectrum_study.md):
+swift run fluoddity-metal --sweep       # parameter survey        → sweep_results.csv
+swift run fluoddity-metal --map         # drive×dissipation map   → map_results.csv
+swift run fluoddity-metal --map3        # 3-param map (+sensors)  → map3_results.csv
+swift run fluoddity-metal --sdscan      # sensorDist scan         → sdscan_*.csv
+swift run fluoddity-metal --bistab      # bistability probe       → bistab_results.csv
+swift run fluoddity-metal --3dspec      # 3D engine spectrum      → 3dspec_manifest.csv
 ```
 
 ## 2D engine
@@ -50,6 +57,8 @@ agents overlaid. A live, grouped slider panel (top-left) tunes everything.
 - **Right-click** — adopt + mutate the cohort under the cursor (directed
   evolution; 8 cohorts, tinted by color).
 - **`r`** — re-roll all brains (or use the **Brain** button).
+- **`c` / `x`** — capture / restore a creature (full state, see below).
+- **`j` / `k`** — record / replay a parameter path.
 - **Save / Load / Reset** buttons — presets (params + brains) to `presets/*.json`.
 - **Diag** toggle — research mode (HUD + plot + field calcs) vs art mode (perf).
 - **`viewMode`** slider — dye art / **vorticity** ω / **enstrophy** |ω|² /
@@ -57,17 +66,60 @@ agents overlaid. A live, grouped slider panel (top-left) tunes everything.
   **E/Z time-series plot** (the research-viz layer; ties to the
   `navier-stokes` program — ω is exactly that 2D solver's state variable).
 
+## Faithful fluid
+
+The fluid is not just Stable-Fluids-with-decay: the two unphysical shortcuts of
+the original engine were replaced with their physical counterparts
+(**[`docs/faithful_fluid.md`](docs/faithful_fluid.md)**):
+
+- **Real viscosity** — uniform velocity damping was replaced by an explicit
+  **ν∇² diffusion** pass (the `viscosity` knob). Damping kills all scales
+  equally; viscosity is scale-selective (∝k²), which is what gives small
+  scales a real dissipation range. A weak residual drag (`velDamp`) remains as
+  the large-scale energy sink, as in forced-2D-turbulence practice.
+- **Net-zero force dipoles** — agents no longer inject momentum as monopoles;
+  each agent forces the fluid with a **+f/−f pusher dipole** (the `dipoleLen`
+  knob), the defining property of active-swimmer forcing. Total injected
+  momentum is zero to machine precision.
+
+Incompressibility (Jacobi-Leray projection) and **chemotaxis** (`cohesion` —
+agents steer toward higher dye = higher agent density, the ingredient that
+makes them aggregate into membranes and cells) were already faithful and kept.
+
+## Capture: creatures & paths
+
+The system is **hysteretic** — a grown structure depends on the *path* of
+parameter changes that produced it, not just the final values — so good
+creatures can't be reproduced from a preset alone. The capture system
+(**[`docs/capture.md`](docs/capture.md)**) saves the **full state** instead:
+
+- **`c`** — capture the current creature (velocity + dye fields, every agent,
+  brains, params) to `captures/creatures/*.fluo`. Round-trips bit-for-bit
+  (verified by `--capturetest`).
+- **`x`** — restore, cycling through saved captures (amber status label,
+  bottom-right).
+- **`j`** — toggle recording the parameter *path* (a timed journal of every
+  knob) to `captures/paths/`; **`k`** — replay the last path from the current
+  state.
+
+Works identically in 3D (`captures/creatures3d`, `.fluo3`).
+
 ## 3D engine (`--3d`)
 
-The whole model promoted to 3D, the owner's `3dMC` idea realized: a 128³
+The whole model promoted to 3D, the owner's `3dMC` idea realized: a 160³
 incompressible fluid (6-neighbour Hodge projection) forced by agents whose
 **Monte-Carlo tangent-plane brain** samples random planes containing their
 velocity, runs the 2D symmetric brain per plane, and integrates the steering into
-3D. Rendered as a **ray-marched volume** of the agents' dye density.
+3D. The faithful-fluid retrofit applies here too (ν∇² viscosity, net-zero
+dipole forcing), and chemotaxis senses the full **3D dye gradient** — crank
+the `cohesion` knob to grow volumetric creatures. Rendered as a
+**ray-marched volume** of the agents' dye density.
 
 - **Drag** to orbit · **scroll** to zoom.
 - **`r`** — re-roll the 3D brain.
 - **`[` / `]`** — dim / brighten the volume density.
+- **`c` / `x`** and **`j` / `k`** — capture/restore creatures and
+  record/replay paths, same as 2D.
 
 ## Spectrum study
 
@@ -87,8 +139,12 @@ sources held as Swift strings. No external dependencies. Every step is verified
 headlessly (the compute path + incompressibility checks) since the rendered
 window can only be eyeballed; see the `--*test` flags above.
 
+## License
+
+[AGPL-3.0](LICENSE).
+
 ---
 
-Fork of [aphid91/Fluoddity](https://github.com/aphid91/Fluoddity) — built from
-the ideas, idea-sharing collaboration. Made with
+Fork of [aphid91/Fluoddity](https://github.com/aphid91/Fluoddity) (MIT) — built
+from the ideas, idea-sharing collaboration. Made with
 [Claude Code](https://claude.com/claude-code).

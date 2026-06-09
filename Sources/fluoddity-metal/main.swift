@@ -64,5 +64,31 @@ let appDelegate: NSApplicationDelegate =
     CommandLine.arguments.contains("--3d") ? App3D() : AppDelegate()
 app.delegate = appDelegate
 app.setActivationPolicy(.regular)
+
+// Minimal menu bar — a SwiftPM AppKit app gets none by default, which means
+// no ⌘Q / ⌘H / ⌘M. One app menu with the standard items fixes that.
+let mainMenu = NSMenu()
+let appMenuItem = NSMenuItem()
+mainMenu.addItem(appMenuItem)
+let appMenu = NSMenu()
+appMenu.addItem(withTitle: "About fluoddity-metal",
+                action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                keyEquivalent: "")
+appMenu.addItem(.separator())
+appMenu.addItem(withTitle: "Hide fluoddity-metal",
+                action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+appMenu.addItem(.separator())
+appMenu.addItem(withTitle: "Quit fluoddity-metal",
+                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+appMenuItem.submenu = appMenu
+let windowMenuItem = NSMenuItem()
+mainMenu.addItem(windowMenuItem)
+let windowMenu = NSMenu(title: "Window")
+windowMenu.addItem(withTitle: "Minimize",
+                   action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+windowMenuItem.submenu = windowMenu
+app.mainMenu = mainMenu
+app.windowsMenu = windowMenu
+
 app.activate(ignoringOtherApps: true)
 app.run()

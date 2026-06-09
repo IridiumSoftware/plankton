@@ -8,6 +8,8 @@ DerivedData/
 xcuserdata/
 
 # user-saved presets + captured creatures/paths
+# (presets/preset_003.json is force-tracked: it's the baseline brain+params
+#  the headless studies --sweep/--map/--map3/--sdscan/--bistab all load)
 presets/
 captures/
 
