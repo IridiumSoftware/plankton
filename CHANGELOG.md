@@ -5,6 +5,11 @@ All notable changes to **plankton** are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `ROADMAP.md` — possible future directions (richer brains, video/GIF export,
+  scale, boundaries/obstacles, sound-reactive, VR) with design principles to
+  preserve; linked from the README.
+
 ### Changed
 - Headless study modes (`--sweep`, `--map`, `--map3`, `--sdscan`, `--bistab`,
   `--3dspec`) now write their CSVs (and the 3dspec `.bin` dumps) under `data/`

@@ -153,6 +153,12 @@ sources held as Swift strings. No external dependencies. Every step is verified
 headlessly (the compute path + incompressibility checks) since the rendered
 window can only be eyeballed; see the `--*test` flags above.
 
+## Roadmap
+
+Possible future directions (video/GIF export, richer brains, boundaries,
+sound-reactive, …) are in **[`ROADMAP.md`](ROADMAP.md)**. Nothing there is
+committed — discussion and contributions welcome.
+
 ## License
 
 [AGPL-3.0](LICENSE).
