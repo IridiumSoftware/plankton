@@ -54,6 +54,8 @@ final class App3D: NSObject, NSApplicationDelegate {
             // append-only: captures + path journals serialize params by knob index
             Knob3D(name: "simSpeed",     get: { sim.simSpeed },     set: { sim.simSpeed = $0 },     lo: 0,     hi: 4),
             Knob3D(name: "sharpness",    get: { r.sharpness },      set: { r.sharpness = $0 },      lo: 0.5,   hi: 4),
+            Knob3D(name: "mutationStrength", get: { sim.mutationStrength }, set: { sim.mutationStrength = $0 }, lo: 0, hi: 1.5),
+            Knob3D(name: "pointAlpha",   get: { r.pointAlpha },     set: { r.pointAlpha = $0 },     lo: 0,     hi: 0.6),
         ]
         panel = Panel3D(knobs: knobs)
         panel.onReroll = { [weak self] in self?.renderer.reroll() }
@@ -64,6 +66,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         // capture: bind the param read/write to the 3D knobs, route the capture keys
         renderer.paramRead = { knobs.map { $0.get() } }
         renderer.paramWrite = { i, v in if i < knobs.count { knobs[i].set(v) } }
+        view.onBreed = { [weak self] uv in self?.renderer.breed(at: uv) }
         view.onKey = { [weak self] key in
             guard let self else { return }
             switch key {
@@ -77,12 +80,13 @@ final class App3D: NSObject, NSApplicationDelegate {
 
         // keyboard-help button (bottom-left; expands upward)
         help = HelpView(text: """
-        drag      orbit camera
-        scroll    zoom
-        r         re-roll brain
-        [  /  ]   dim / brighten volume
-        c / x     capture creature / restore (cycle)
-        j / k     record path (toggle) / replay path
+        drag         orbit camera
+        scroll       zoom
+        right-click  adopt + mutate cohort (breed)
+        r            re-roll brains (8 cohorts)
+        [  /  ]      dim / brighten volume
+        c / x        capture creature / restore (cycle)
+        j / k        record path (toggle) / replay path
         """)
         help.setFrameOrigin(NSPoint(x: 12, y: 12))
         help.autoresizingMask = [.maxXMargin, .maxYMargin]

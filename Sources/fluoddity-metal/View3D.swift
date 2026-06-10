@@ -6,8 +6,16 @@ final class View3D: MTKView {
     var onReroll: (() -> Void)?
     var onDensity: ((Float) -> Void)?
     var onKey: ((String) -> Void)?          // capture keys (c/x/j/k) → App3D
+    var onBreed: ((SIMD2<Float>) -> Void)?  // right-click (uv in 0..1, y up) → breed
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func rightMouseDown(with e: NSEvent) {
+        let p = convert(e.locationInWindow, from: nil)
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        // AppKit origin is bottom-left, same as NDC y-up — no flip needed
+        onBreed?(SIMD2(Float(p.x / bounds.width), Float(p.y / bounds.height)))
+    }
 
     override func keyDown(with e: NSEvent) {
         switch e.charactersIgnoringModifiers {

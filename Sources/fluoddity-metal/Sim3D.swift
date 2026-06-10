@@ -20,7 +20,7 @@ final class Sim3D {
     let count: Int
     let dim: SIMD3<UInt32>
     let particleBuffer: MTLBuffer
-    let ruleBuffer: MTLBuffer          // 20 float4: single global brain
+    let ruleBuffer: MTLBuffer          // nCohorts × 20 float4 (one 80-param brain per cohort)
     private(set) var vel: MTLBuffer
     private var velTmp: MTLBuffer
     private var pressure: MTLBuffer
@@ -52,6 +52,7 @@ final class Sim3D {
     var dyeDecay: Float = 0.985
     var dyeAmount: Float = 1.0
     var simSpeed: Float = 1.0        // sim steps per rendered frame (<1 = slow-mo via frame skip, 0 = pause)
+    var mutationStrength: Float = 0.3 // right-click breed: mutation amount
     private var frame: UInt32 = 0
 
     init(device: MTLDevice, library: MTLLibrary, count: Int = 1 << 20, fieldDim: Int = 128) {
@@ -192,6 +193,7 @@ final class Sim3D {
         var mp = MoveParams3GPU(swim: swim, sensorDist: sensorDist, sensorAngle: sensorAngle,
                                 turn: turn, axialForce: axialForce, fluidPull: fluidPull,
                                 senseScale: senseScale, planeSamples: planeSamples, cohesion: cohesion)
+        var countv = UInt32(count)
         particles(cmd, movePipe) { e in
             e.setBuffer(self.particleBuffer, offset: 0, index: 0)
             e.setBuffer(self.vel, offset: 0, index: 1)
@@ -200,8 +202,12 @@ final class Sim3D {
             e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
             e.setBytes(&framev, length: 4, index: 5)
             e.setBuffer(self.dye, offset: 0, index: 6)
+            e.setBytes(&countv, length: 4, index: 7)
         }
     }
+
+    // 8 sub-populations, each with its own 80-param brain (mirrors the 2D engine)
+    static let nCohorts = 8
 
     static func randomRule() -> [SIMD4<Float>] {
         var rng = SystemRandomNumberGenerator()
@@ -210,22 +216,60 @@ final class Sim3D {
                   Float.random(in: lo...hi, using: &rng), Float.random(in: lo...hi, using: &rng))
         }
         var r = [SIMD4<Float>]()
-        for _ in 0..<10 { r.append(r4(-2, 2)) }   // frequencies
-        for _ in 0..<10 { r.append(r4(-1, 1)) }   // amplitudes
+        for _ in 0..<nCohorts {
+            for _ in 0..<10 { r.append(r4(-2, 2)) }   // frequencies
+            for _ in 0..<10 { r.append(r4(-1, 1)) }   // amplitudes
+        }
         return r
     }
 
     func rerollRule() {
         var r = Sim3D.randomRule()
         memcpy(ruleBuffer.contents(), &r, r.count * MemoryLayout<SIMD4<Float>>.stride)
-        print("3D brain re-rolled")
+        print("3D brains re-rolled (\(Sim3D.nCohorts) cohorts)")
+    }
+
+    // Right-click breed (mirrors the 2D breedAt): vote the dominant cohort among
+    // agents near the click RAY (a 3D click is a ray, not a point), then set every
+    // cohort to a mutation of the winner (cohort 0 = exact parent). All CPU.
+    func breedAt(rayOrigin ro: SIMD3<Float>, rayDir rd: SIMD3<Float>) {
+        let nc = Sim3D.nCohorts
+        let p = particleBuffer.contents().bindMemory(to: Particle3D.self, capacity: count)
+        var votes = [Int](repeating: 0, count: nc)
+        let radius2: Float = 0.08 * 0.08
+        let stepN = max(1, count / 200_000)   // subsample for speed
+        var i = 0
+        while i < count {
+            // perpendicular distance from agent to the ray (forward half only)
+            let w = p[i].pos - ro
+            let t = simd_dot(w, rd)
+            if t > 0 {
+                let perp = w - rd * t
+                if simd_length_squared(perp) < radius2 { votes[(i * nc) / count] += 1 }
+            }
+            i += stepN
+        }
+        guard let parent = votes.indices.max(by: { votes[$0] < votes[$1] }),
+              votes[parent] > 0 else { print("3D breed: no agents near click ray"); return }
+
+        let rf = ruleBuffer.contents().bindMemory(to: Float.self, capacity: nc * 80)
+        let parentRule = Array(UnsafeBufferPointer(start: rf + parent * 80, count: 80))
+        var rng = SystemRandomNumberGenerator()
+        let m = mutationStrength
+        for c in 0..<nc {
+            for k in 0..<80 {
+                rf[c * 80 + k] = (c == 0) ? parentRule[k]
+                    : parentRule[k] + Float.random(in: -m...m, using: &rng)
+            }
+        }
+        print("3D bred from cohort \(parent) (\(votes[parent]) votes)")
     }
 
     // ── full-state capture: vel + dye + particles + brain + the param values (extra) ──
     func serializeState(_ extra: [Float]) -> Data {
         var data = Data()
         func putI(_ v: Int32) { var x = v; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
-        putI(0x464C5533); putI(1)                                  // magic "FLU3", version
+        putI(0x464C5533); putI(2)                                  // magic "FLU3", version (2 = 8-cohort rule)
         putI(Int32(dim.x)); putI(Int32(count))
         for b in [vel, dye, particleBuffer, ruleBuffer] { data.append(Data(bytes: b.contents(), count: b.length)) }
         putI(Int32(extra.count))
@@ -241,11 +285,23 @@ final class Sim3D {
             var off = 0
             func i32() -> Int32 { let v = raw.loadUnaligned(fromByteOffset: off, as: Int32.self); off += 4; return v }
             guard i32() == 0x464C5533 else { print("3D capture: bad magic"); return }
-            _ = i32()
+            let version = Int(i32())
             let fd = Int(i32()), c = Int(i32())
             guard fd == Int(dim.x), c == count else { print("3D capture: dims mismatch (\(fd)/\(c) vs \(Int(dim.x))/\(count))"); return }
-            for b in [vel, dye, particleBuffer, ruleBuffer] {
+            for b in [vel, dye, particleBuffer] {
                 memcpy(b.contents(), raw.baseAddress!.advanced(by: off), b.length); off += b.length
+            }
+            if version >= 2 {
+                memcpy(ruleBuffer.contents(), raw.baseAddress!.advanced(by: off), ruleBuffer.length)
+                off += ruleBuffer.length
+            } else {
+                // v1 stored a single 80-float brain — replicate it into all cohorts
+                let single = 80 * 4
+                let rp = ruleBuffer.contents()
+                for cix in 0..<Sim3D.nCohorts {
+                    memcpy(rp.advanced(by: cix * single), raw.baseAddress!.advanced(by: off), single)
+                }
+                off += single
             }
             let np = Int(i32()); var p = [Float]()
             for _ in 0..<np { p.append(raw.loadUnaligned(fromByteOffset: off, as: Float.self)); off += 4 }

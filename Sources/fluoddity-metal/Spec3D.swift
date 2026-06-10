@@ -24,7 +24,7 @@ func run3dSpec() {
 
     // snapshot a shared brain so forceGain is the only thing varying across runs
     let sim0 = Sim3D(device: device, library: library, fieldDim: N)
-    let rcount = 80                              // 20 float4 = single global brain
+    let rcount = Sim3D.nCohorts * 80             // all cohort brains (kept identical across runs)
     let rule = Array(UnsafeBufferPointer(
         start: sim0.ruleBuffer.contents().bindMemory(to: Float.self, capacity: rcount), count: rcount))
 

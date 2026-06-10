@@ -7,10 +7,12 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
     let sim: Sim3D                              // internal: the 3D panel tunes it
     private let volumePipe: MTLRenderPipelineState
+    private let pointPipe: MTLRenderPipelineState
     let camera = Camera3D()
     var densityScale: Float = 0.006
     var sharpness: Float = 1.5      // ray-march transfer gamma — >1 cuts faint halo, crisper edges
     var colorMode: Float = 0                    // 0 density, 1 flow direction, 2 speed
+    var pointAlpha: Float = 0.0     // cohort-tinted agent overlay (0 = off; raise to see species when breeding)
     // capture (set by App3D, which owns the knob list)
     var onCaptureStatus: ((String) -> Void)?
     var paramRead: () -> [Float] = { [] }
@@ -31,10 +33,37 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         d.fragmentFunction = lib.makeFunction(name: "raymarch_fragment")
         d.colorAttachments[0].pixelFormat = pixelFormat
         volumePipe = try! device.makeRenderPipelineState(descriptor: d)
+
+        // cohort-tinted agent points, additive over the volume
+        let pd = MTLRenderPipelineDescriptor()
+        pd.vertexFunction = lib.makeFunction(name: "point3d_vertex")
+        pd.fragmentFunction = lib.makeFunction(name: "point3d_fragment")
+        pd.colorAttachments[0].pixelFormat = pixelFormat
+        pd.colorAttachments[0].isBlendingEnabled = true
+        pd.colorAttachments[0].rgbBlendOperation = .add
+        pd.colorAttachments[0].alphaBlendOperation = .add
+        pd.colorAttachments[0].sourceRGBBlendFactor = .one
+        pd.colorAttachments[0].destinationRGBBlendFactor = .one
+        pd.colorAttachments[0].sourceAlphaBlendFactor = .one
+        pd.colorAttachments[0].destinationAlphaBlendFactor = .one
+        pointPipe = try! device.makeRenderPipelineState(descriptor: pd)
         super.init()
     }
 
     func reroll() { sim.rerollRule() }
+
+    // right-click breed: unproject the click into a world ray (same math as the
+    // ray-march fragment), vote + mutate in Sim3D
+    func breed(at uv: SIMD2<Float>) {
+        let invVP = camera.invViewProj()
+        let ndc = uv * 2 - SIMD2<Float>(1, 1)
+        let nh = invVP * SIMD4<Float>(ndc.x, ndc.y, 0, 1)
+        let fh = invVP * SIMD4<Float>(ndc.x, ndc.y, 1, 1)
+        let ro = SIMD3(nh.x, nh.y, nh.z) / nh.w
+        let rd = simd_normalize(SIMD3(fh.x, fh.y, fh.z) / fh.w - ro)
+        sim.breedAt(rayOrigin: ro, rayDir: rd)
+        onCaptureStatus?("bred — cohort 0 keeps the parent, 1–7 mutate")
+    }
     func adjustDensity(_ f: Float) {
         densityScale = max(0.001, min(2.0, densityScale * f))
         print(String(format: "densityScale = %.3f", densityScale))
@@ -110,6 +139,19 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         var sh = sharpness
         enc.setFragmentBytes(&sh, length: 4, index: 6)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+
+        // cohort-tinted agent overlay (species identity for breeding)
+        if pointAlpha > 0.001 {
+            enc.setRenderPipelineState(pointPipe)
+            enc.setVertexBuffer(sim.particleBuffer, offset: 0, index: 0)
+            var vp = camera.viewProj()
+            enc.setVertexBytes(&vp, length: MemoryLayout<float4x4>.stride, index: 1)
+            var cnt = UInt32(sim.count)
+            enc.setVertexBytes(&cnt, length: 4, index: 2)
+            var pa = pointAlpha
+            enc.setFragmentBytes(&pa, length: 4, index: 0)
+            enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.count)
+        }
         enc.endEncoding()
 
         cmd.present(drawable)

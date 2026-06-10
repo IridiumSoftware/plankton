@@ -116,7 +116,10 @@ the `cohesion` knob to grow volumetric creatures. Rendered as a
 **ray-marched volume** of the agents' dye density.
 
 - **Drag** to orbit · **scroll** to zoom.
-- **`r`** — re-roll the 3D brain.
+- **Right-click** — adopt + mutate the cohort under the click ray (directed
+  evolution, same as 2D; 8 cohorts — raise `pointAlpha` to tint agents by
+  cohort and see who's who).
+- **`r`** — re-roll all 8 cohort brains.
 - **`[` / `]`** — dim / brighten the volume density.
 - **`c` / `x`** and **`j` / `k`** — capture/restore creatures and
   record/replay paths, same as 2D.

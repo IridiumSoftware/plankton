@@ -35,9 +35,12 @@ enum Shaders3D {
     }
     static inline float hashf(float x) { return fract(sin(x) * 43758.5453); }
     // 80-param symmetric brain (2D): 10 Fourier centers, 4D→4D sum of sines.
-    static inline float4 fourier3(device const float4 *rule, float4 x) {
+    // 8 cohorts (mirrors the 2D engine): `off` selects this agent's 20-float4
+    // block (freqs[10] + amps[10]) — the substrate for right-click breeding.
+    constant int N_COHORTS3 = 8;
+    static inline float4 fourier3(device const float4 *rule, uint off, float4 x) {
         float4 acc = float4(0.0);
-        for (int i = 0; i < 10; i++) acc += rule[10 + i] * sin(dot(rule[i], x));
+        for (int i = 0; i < 10; i++) acc += rule[off + 10 + i] * sin(dot(rule[off + i], x));
         return acc;
     }
     static inline float sampleScalar3(device const float *s, float3 p, uint3 d) {
@@ -218,8 +221,10 @@ enum Shaders3D {
                        device const float4 *rule   [[buffer(4)]],
                        constant uint &frame        [[buffer(5)]],
                        device const float *dye     [[buffer(6)]],
+                       constant uint &count        [[buffer(7)]],
                        uint gid [[thread_position_in_grid]]) {
         Particle3D p = parts[gid];
+        uint off = ((gid * uint(N_COHORTS3)) / count) * 20;   // this agent's cohort block
         float3 dd = float3(d);
         float speed = length(p.vel);
         float3 fwd = speed > 1e-6 ? p.vel / speed : float3(1.0, 0.0, 0.0);
@@ -244,8 +249,8 @@ enum Shaders3D {
             float2 L = float2(dot(vL, fwd), dot(vL, w)) * mp.senseScale;
             float2 R = float2(dot(vR, fwd), dot(vR, w)) * mp.senseScale;
 
-            float4 base = fourier3(rule, float4(L.x, L.y, R.x, R.y));
-            float4 mir  = fourier3(rule, float4(R.x, -R.y, L.x, -L.y));
+            float4 base = fourier3(rule, off, float4(L.x, L.y, R.x, R.y));
+            float4 mir  = fourier3(rule, off, float4(R.x, -R.y, L.x, -L.y));
             float axial = base.x + mir.x;       // reflection-even
             float turnT = base.y - mir.y;       // reflection-odd (no handedness)
             force += fwd * (axial * mp.axialForce) + w * (turnT * mp.turn);
@@ -270,24 +275,30 @@ enum Shaders3D {
         parts[gid] = p;
     }
 
-    struct P3Out { float4 position [[position]]; float pointSize [[point_size]]; float speed; };
+    // agent point overlay, COHORT-TINTED (the species identity the shared dye
+    // volume can't show — turn up pointAlpha to see who's who when breeding)
+    constant float3 COHORT_COLS[8] = {
+        float3(1.0, 0.35, 0.35), float3(1.0, 0.75, 0.2), float3(0.95, 1.0, 0.3), float3(0.3, 1.0, 0.45),
+        float3(0.3, 0.95, 1.0),  float3(0.35, 0.5, 1.0), float3(0.75, 0.4, 1.0), float3(1.0, 0.4, 0.85)
+    };
+    struct P3Out { float4 position [[position]]; float pointSize [[point_size]]; float3 col; };
     vertex P3Out point3d_vertex(uint vid                       [[vertex_id]],
                                 device const Particle3D *parts  [[buffer(0)]],
-                                constant float4x4 &viewProj     [[buffer(1)]]) {
+                                constant float4x4 &viewProj     [[buffer(1)]],
+                                constant uint &count            [[buffer(2)]]) {
         Particle3D p = parts[vid];
         P3Out o;
         o.position = viewProj * float4(p.pos, 1.0);
-        o.pointSize = 2.0;
-        o.speed = length(p.vel);
+        o.pointSize = 2.5;
+        o.col = COHORT_COLS[(vid * uint(N_COHORTS3)) / count];
         return o;
     }
-    fragment float4 point3d_fragment(P3Out in [[stage_in]], float2 pc [[point_coord]]) {
+    fragment float4 point3d_fragment(P3Out in [[stage_in]], float2 pc [[point_coord]],
+                                     constant float &alpha [[buffer(0)]]) {
         float r = length(pc - 0.5) * 2.0;
         if (r > 1.0) discard_fragment();
-        float a = (1.0 - r * r) * 0.12;
-        float t = clamp(in.speed * 4.0, 0.0, 1.0);
-        float3 col = mix(float3(0.2, 0.5, 1.0), float3(1.0, 0.7, 0.3), t);
-        return float4(col * a, a);
+        float a = (1.0 - r * r) * alpha;
+        return float4(in.col * a, a);
     }
 
     // ── volumetric ray-march of the dye field (Stage 3) ───────────────────
