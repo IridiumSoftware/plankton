@@ -62,7 +62,7 @@ final class ControlsPanel: NSView {
                 cursor -= headerH
             }
             let y = cursor - rowH + 3
-            addSubview(label(k.name, NSRect(x: 10, y: y, width: 98, height: 18), .left))
+            addSubview(label(k.name, NSRect(x: 10, y: y, width: 90, height: 18), .left))
 
             if let opts = k.options {
                 let pop = NSPopUpButton(frame: NSRect(x: 112, y: y - 2, width: 206, height: 24), pullsDown: false)
@@ -74,7 +74,11 @@ final class ControlsPanel: NSView {
                 popups.append(pop); sliders.append(nil); valueLabels.append(nil)
                 addSubview(pop)
             } else {
-                let slider = NSSlider(frame: NSRect(x: 112, y: y, width: 156, height: 20))
+                // −/+ steppers flank the slider: one knob-step per click, for the
+                // fine-tuning a mouse drag can't do
+                addSubview(stepButton("−", NSRect(x: 102, y: y, width: 18, height: 19), i, #selector(stepDown(_:))))
+
+                let slider = NSSlider(frame: NSRect(x: 122, y: y, width: 124, height: 20))
                 slider.minValue = Double(k.lo)
                 slider.maxValue = Double(k.hi)
                 slider.doubleValue = Double(params[keyPath: k.kp])
@@ -85,7 +89,9 @@ final class ControlsPanel: NSView {
                 sliders.append(slider); popups.append(nil)
                 addSubview(slider)
 
-                let v = label(fmt(params[keyPath: k.kp]), NSRect(x: 272, y: y, width: 46, height: 18), .right)
+                addSubview(stepButton("+", NSRect(x: 248, y: y, width: 18, height: 19), i, #selector(stepUp(_:))))
+
+                let v = label(fmt(params[keyPath: k.kp]), NSRect(x: 270, y: y, width: 48, height: 18), .right)
                 valueLabels.append(v)
                 addSubview(v)
             }
@@ -117,6 +123,33 @@ final class ControlsPanel: NSView {
     @objc private func popupChanged(_ p: NSPopUpButton) {
         params[keyPath: knobs[p.tag].kp] = Float(p.indexOfSelectedItem)
         onResetAvg?()
+    }
+
+    @objc private func stepDown(_ b: NSButton) { step(b.tag, -1) }
+    @objc private func stepUp(_ b: NSButton) { step(b.tag, +1) }
+    private func step(_ i: Int, _ dir: Float) {
+        let k = knobs[i]
+        let v = min(max(params[keyPath: k.kp] + dir * k.step, k.lo), k.hi)
+        params[keyPath: k.kp] = v
+        sliders[i]?.doubleValue = Double(v)
+        valueLabels[i]?.stringValue = fmt(v)
+        onResetAvg?()
+    }
+
+    private func stepButton(_ title: String, _ frame: NSRect, _ tag: Int, _ action: Selector) -> NSButton {
+        let b = NSButton(title: title, target: self, action: action)
+        b.tag = tag
+        b.isBordered = false
+        b.wantsLayer = true
+        b.layer?.cornerRadius = 4
+        b.layer?.borderWidth = 1
+        b.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.27, blue: 0.40, alpha: 0.98).cgColor
+        b.layer?.borderColor = NSColor(calibratedRed: 0.45, green: 0.82, blue: 1.0, alpha: 0.7).cgColor
+        b.attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.96, blue: 1.0, alpha: 1.0),
+            .font: NSFont.boldSystemFont(ofSize: 12)])
+        b.frame = frame
+        return b
     }
 
     @objc private func buttonClicked(_ b: NSButton) {

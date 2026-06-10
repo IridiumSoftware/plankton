@@ -13,6 +13,8 @@ struct Knob3D {
     let hi: Float
     var group: String = "Agents"
     var options: [String]? = nil
+    var step: Float = 0                       // 0 ⇒ (hi−lo)/100 (the −/+ fine-tune increment)
+    var stepValue: Float { step > 0 ? step : (hi - lo) / 100 }
 }
 
 // On-screen panel for the 3D engine: a Brain (re-roll) button + the knobs
@@ -65,10 +67,10 @@ final class Panel3D: NSView {
             cursor -= headerH
             for (i, k) in knobs.enumerated() where k.group == g {
                 let y = cursor - rowH + 3
-                addSubview(label(k.name, NSRect(x: 8, y: y, width: 96, height: 18), .left))
+                addSubview(label(k.name, NSRect(x: 8, y: y, width: 84, height: 18), .left))
 
                 if let opts = k.options {
-                    let pop = NSPopUpButton(frame: NSRect(x: 108, y: y - 2, width: 184, height: 24), pullsDown: false)
+                    let pop = NSPopUpButton(frame: NSRect(x: 96, y: y - 2, width: 196, height: 24), pullsDown: false)
                     pop.addItems(withTitles: opts)
                     pop.selectItem(at: min(max(Int(k.get() + 0.5), 0), opts.count - 1))
                     pop.target = self
@@ -77,7 +79,10 @@ final class Panel3D: NSView {
                     popups[i] = pop
                     addSubview(pop)
                 } else {
-                    let s = NSSlider(frame: NSRect(x: 108, y: y, width: 140, height: 20))
+                    // −/+ steppers flank the slider: one fine step per click
+                    addSubview(stepButton("−", NSRect(x: 96, y: y, width: 18, height: 19), i, #selector(stepDown(_:))))
+
+                    let s = NSSlider(frame: NSRect(x: 116, y: y, width: 108, height: 20))
                     s.minValue = Double(k.lo)
                     s.maxValue = Double(k.hi)
                     s.doubleValue = Double(k.get())
@@ -88,7 +93,9 @@ final class Panel3D: NSView {
                     sliders[i] = s
                     addSubview(s)
 
-                    let v = label(fmt(k.get()), NSRect(x: 250, y: y, width: 42, height: 18), .right)
+                    addSubview(stepButton("+", NSRect(x: 226, y: y, width: 18, height: 19), i, #selector(stepUp(_:))))
+
+                    let v = label(fmt(k.get()), NSRect(x: 246, y: y, width: 46, height: 18), .right)
                     valueLabels[i] = v
                     addSubview(v)
                 }
@@ -120,6 +127,32 @@ final class Panel3D: NSView {
 
     @objc private func popupChanged(_ p: NSPopUpButton) {
         knobs[p.tag].set(Float(p.indexOfSelectedItem))
+    }
+
+    @objc private func stepDown(_ b: NSButton) { step(b.tag, -1) }
+    @objc private func stepUp(_ b: NSButton) { step(b.tag, +1) }
+    private func step(_ i: Int, _ dir: Float) {
+        let k = knobs[i]
+        let v = min(max(k.get() + dir * k.stepValue, k.lo), k.hi)
+        k.set(v)
+        sliders[i]?.doubleValue = Double(v)
+        valueLabels[i]?.stringValue = fmt(v)
+    }
+
+    private func stepButton(_ title: String, _ frame: NSRect, _ tag: Int, _ action: Selector) -> NSButton {
+        let b = NSButton(title: title, target: self, action: action)
+        b.tag = tag
+        b.isBordered = false
+        b.wantsLayer = true
+        b.layer?.cornerRadius = 4
+        b.layer?.borderWidth = 1
+        b.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.27, blue: 0.40, alpha: 0.98).cgColor
+        b.layer?.borderColor = NSColor(calibratedRed: 0.45, green: 0.82, blue: 1.0, alpha: 0.7).cgColor
+        b.attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: NSColor(calibratedRed: 0.85, green: 0.96, blue: 1.0, alpha: 1.0),
+            .font: NSFont.boldSystemFont(ofSize: 12)])
+        b.frame = frame
+        return b
     }
 
     private func fmt(_ v: Float) -> String { String(format: "%.3f", v) }
