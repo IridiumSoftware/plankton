@@ -5,6 +5,14 @@ Apple Silicon — a fork of [Fluoddity](https://github.com/aphid91/Fluoddity) (b
 aphid91), rebuilt from the ideas up in Swift + Metal rather than ported from its
 OpenGL/GLSL-compute codebase. Both a **2D** engine and a **3D** engine.
 
+<p align="center">
+  <img src="media/creature_dye.png" width="49%" alt="Captured creatures in the dye-art view — glowing chemotactic clusters on the fluid"/>
+  <img src="media/creature_vorticity.png" width="49%" alt="The same frozen state in the vorticity view — the fluid's ω field under the creatures"/>
+</p>
+<p align="center"><em>The same captured creature, frozen mid-frame (<code>simSpeed</code> 0):
+the dye art (left) and the fluid's vorticity ω underneath it (right) — flip between
+them live with the <code>viewMode</code> dropdown.</em></p>
+
 ## Idea
 
 Particles (agents) never interact directly; they sense and deposit into a shared
