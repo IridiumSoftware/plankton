@@ -12,7 +12,7 @@ import numpy as np, csv
 from collections import defaultdict
 
 PK = defaultdict(list); SL = defaultdict(list)
-for r in csv.DictReader(open("bistab_results.csv")):
+for r in csv.DictReader(open("data/bistab_results.csv")):
     PK[float(r["sensorDist"])].append(int(r["peakK"]))
     SL[float(r["sensorDist"])].append(float(r["inSlope"]))
 sds = sorted(PK.keys())

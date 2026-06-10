@@ -28,6 +28,7 @@ func run3dSpec() {
     let rule = Array(UnsafeBufferPointer(
         start: sim0.ruleBuffer.contents().bindMemory(to: Float.self, capacity: rcount), count: rcount))
 
+    Study.ensureDir()
     say("3dspec: \(forceGains.count) forceGain × \(warmup) warmup steps at \(N)^3 (shared brain)\n")
     var manifest = ["i,forceGain,file"]
     for (i, fg) in forceGains.enumerated() {
@@ -39,10 +40,10 @@ func run3dSpec() {
             guard let cmd = queue.makeCommandBuffer() else { break }
             sim.encode(into: cmd); cmd.commit(); cmd.waitUntilCompleted()
         }
-        let fn = "vel3d_\(i).bin"
+        let fn = Study.path("vel3d_\(i).bin")          // data/vel3d_<i>.bin
         let data = Data(bytes: sim.vel.contents(), count: 3 * n3 * MemoryLayout<Float>.stride)
         try? data.write(to: URL(fileURLWithPath: fn))
-        manifest.append("\(i),\(fg),\(fn)")
+        manifest.append("\(i),\(fg),\(fn)")            // manifest stores the data/-relative path
         // quick mean|vel| sanity (subsampled)
         let v = sim.vel.contents().bindMemory(to: Float.self, capacity: 3 * n3)
         var s: Float = 0; let stp = max(1, n3 / 50000); var c = 0, j = 0
@@ -53,7 +54,7 @@ func run3dSpec() {
         say(String(format: "  [%d/%d] forceGain=%4g  mean|vel|=%.4f  wrote %@",
                    i + 1, forceGains.count, fg, s / Float(max(1, c)), fn))
     }
-    try? manifest.joined(separator: "\n").write(to: URL(fileURLWithPath: "3dspec_manifest.csv"),
+    try? manifest.joined(separator: "\n").write(to: Study.url("3dspec_manifest.csv"),
                                                 atomically: true, encoding: .utf8)
-    say("\nwrote 3dspec_manifest.csv + vel3d_*.bin (\(forceGains.count) snapshots, ~25 MB each)")
+    say("\nwrote data/3dspec_manifest.csv + data/vel3d_*.bin (\(forceGains.count) snapshots, ~25 MB each)")
 }

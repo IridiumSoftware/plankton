@@ -11,7 +11,7 @@ import numpy as np, csv
 
 DIM = 1024  # field grid; sensorDist is normalized [0,1], lambda is in grid cells
 
-S = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("sdscan_summary.csv")) ]
+S = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("data/sdscan_summary.csv")) ]
 sd  = np.array([r["sensorDist"] for r in S])
 pk  = np.array([r["peakK"] for r in S])
 sl  = np.array([r["inSlope"] for r in S])
@@ -67,7 +67,7 @@ plt.tight_layout(); plt.savefig("figures/fig5_sensordist.png", dpi=140); plt.clo
 
 # ── Fig 6: spectral-shape overlay ───────────────────────────────────────────
 SP = {}
-for r in csv.DictReader(open("sdscan_spectra.csv")):
+for r in csv.DictReader(open("data/sdscan_spectra.csv")):
     s = float(r["sensorDist"]); SP.setdefault(s, ([], []))
     SP[s][0].append(int(r["k"])); SP[s][1].append(float(r["Ek"]))
 sds = sorted(SP.keys())

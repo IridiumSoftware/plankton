@@ -19,7 +19,7 @@ BASE = json.load(open("presets/preset_003.json"))["params"]
 
 rows = []
 if src in ("map", "map3"):
-    path = f"{src}_results.csv"
+    path = f"data/{src}_results.csv"
     for r in csv.DictReader(open(path)):
         p = dict(BASE)
         p["forceGain"] = float(r["forceGain"]); p["velDamp"] = float(r["velDamp"])
@@ -29,7 +29,7 @@ if src in ("map", "map3"):
         rows.append(dict(label=lbl, E=float(r["E"]), Z=float(r["Z"]), pk=int(r["peakK"]),
                          inSlope=float(r["inSlope"]), inR2=float(r["inR2"]), p=p))
 else:
-    path = "sweep_results.csv"
+    path = "data/sweep_results.csv"
     for r in csv.DictReader(open(path)):
         p = dict(BASE)
         if r["axis"] in p and r["value"] != "":
@@ -117,10 +117,10 @@ for name, fn in models.items():
     r2, kk = ols([fn(r) for r in clean])
     print(f"  {name:46s}  R^2={r2:.3f}  ({kk} live groups)")
 
-with open(f"collapse_table_{src}.csv", "w", newline="") as f:
+with open(f"data/collapse_table_{src}.csv", "w", newline="") as f:
     w = csv.writer(f); cols = list(candidates.keys())
     w.writerow(["label", "E", "Z", "peakK", "inSlope", "inR2"] + cols)
     for r in clean:
         w.writerow([r["label"], r["E"], r["Z"], r["pk"], r["inSlope"], r["inR2"]]
                    + [f"{candidates[c](r):.5g}" for c in cols])
-print(f"\nwrote collapse_table_{src}.csv")
+print(f"\nwrote data/collapse_table_{src}.csv")

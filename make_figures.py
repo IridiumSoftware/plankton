@@ -11,7 +11,7 @@ import numpy as np, csv, os
 os.makedirs("figures", exist_ok=True)
 
 # ── load the 2D map ──────────────────────────────────────────────────────────
-M = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("map_results.csv")) ]
+M = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("data/map_results.csv")) ]
 fgs = sorted(set(r["forceGain"] for r in M))
 vds = sorted(set(r["velDamp"] for r in M))
 S = np.full((len(vds), len(fgs)), np.nan)
@@ -71,7 +71,7 @@ plt.tight_layout(); plt.savefig("figures/fig2_collapse.png", dpi=140); plt.close
 
 # ── Fig 3: sensorDist sets the injection scale (peak k) ──────────────────────
 sd, pk = [], []
-for r in csv.DictReader(open("sweep_results.csv")):
+for r in csv.DictReader(open("data/sweep_results.csv")):
     if r["axis"] == "sensorDist":
         sd.append(float(r["value"])); pk.append(int(r["peakK"]))
 fig, ax = plt.subplots(figsize=(6.2, 4.6))
@@ -86,8 +86,8 @@ print("wrote figures/fig1_slope_map.png, fig2_collapse.png, fig3_injection_scale
 
 # ── Fig 4 (optional): 3-axis scan — does sensorDist extend the law? ──────────
 import os
-if os.path.exists("map3_results.csv"):
-    M3 = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("map3_results.csv")) ]
+if os.path.exists("data/map3_results.csv"):
+    M3 = [ {k: float(v) for k, v in r.items()} for r in csv.DictReader(open("data/map3_results.csv")) ]
     fg3 = np.array([r["forceGain"] for r in M3]); vd3 = np.array([r["velDamp"] for r in M3])
     sd3 = np.array([r["sensorDist"] for r in M3]); sl3 = np.array([r["inSlope"] for r in M3])
     gam3 = -np.log(vd3)

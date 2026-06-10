@@ -128,7 +128,7 @@ func runSweep() {
                    hr.min() ?? 0, hr.max() ?? 0))
     }
 
-    let url = URL(fileURLWithPath: "sweep_results.csv")
+    let url = Study.url("sweep_results.csv")
     try? rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     say("\nwrote \(url.path)  (\(rows.count - 1) data rows)")
 }

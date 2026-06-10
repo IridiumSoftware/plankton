@@ -132,7 +132,7 @@ def main():
         selfcheck(); return
     if cmd == "run":
         E, op = run_forced()
-        with open("ns2d_spectrum.csv", "w", newline="") as f:
+        with open("data/ns2d_spectrum.csv", "w", newline="") as f:
             w = csv.writer(f); w.writerow(["k", "Ek"])
             for kk in range(1, len(E)):
                 if E[kk] > 0: w.writerow([kk, f"{E[kk]:.6g}"])
@@ -152,7 +152,7 @@ def main():
             etot = E.sum()
             rows.append([a, f"{etot:.5f}", "", peak, f"{m:.3f}", f"{r2:.3f}"])
             print(f"{a:<5g} {etot:<7.4f}         {peak:<5d}  {m:+.2f}      {r2:.2f}", flush=True)
-        with open("ns2d_sweep.csv", "w", newline="") as f:
+        with open("data/ns2d_sweep.csv", "w", newline="") as f:
             csv.writer(f).writerows(rows)
         print("\nwrote ns2d_sweep.csv")
         return

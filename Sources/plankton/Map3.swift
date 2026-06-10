@@ -103,7 +103,7 @@ func runMap3() {
         say("")
     }
 
-    let url = URL(fileURLWithPath: "map3_results.csv")
+    let url = Study.url("map3_results.csv")
     try? rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     say("wrote \(url.path)  (\(rows.count - 1) cells)")
 }

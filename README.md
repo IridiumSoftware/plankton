@@ -49,13 +49,13 @@ swift run plankton --capturetest # full-state capture round-trips bit-for-bit
 swift run plankton --spectest    # FFT energy-spectrum estimator check
 swift run plankton --vortprobe   # research views stay live (incl. paused)
 
-# headless studies (write CSVs; see docs/spectrum_study.md):
-swift run plankton --sweep       # parameter survey        → sweep_results.csv
-swift run plankton --map         # drive×dissipation map   → map_results.csv
-swift run plankton --map3        # 3-param map (+sensors)  → map3_results.csv
-swift run plankton --sdscan      # sensorDist scan         → sdscan_*.csv
-swift run plankton --bistab      # bistability probe       → bistab_results.csv
-swift run plankton --3dspec      # 3D engine spectrum      → 3dspec_manifest.csv
+# headless studies (write CSVs under data/; see docs/spectrum_study.md):
+swift run plankton --sweep       # parameter survey        → data/sweep_results.csv
+swift run plankton --map         # drive×dissipation map   → data/map_results.csv
+swift run plankton --map3        # 3-param map (+sensors)  → data/map3_results.csv
+swift run plankton --sdscan      # sensorDist scan         → data/sdscan_*.csv
+swift run plankton --bistab      # bistability probe       → data/bistab_results.csv
+swift run plankton --3dspec      # 3D engine spectrum      → data/3dspec_manifest.csv
 ```
 
 ## 2D engine

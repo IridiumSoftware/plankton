@@ -14,15 +14,15 @@ import numpy as np, csv, os
 fig, ax = plt.subplots(1, 2, figsize=(12, 4.8))
 
 # ── (L) spectral-shape overlay ──────────────────────────────────────────────
-if os.path.exists("ns2d_spectrum.csv"):
-    D = [(int(r["k"]), float(r["Ek"])) for r in csv.DictReader(open("ns2d_spectrum.csv"))]
+if os.path.exists("data/ns2d_spectrum.csv"):
+    D = [(int(r["k"]), float(r["Ek"])) for r in csv.DictReader(open("data/ns2d_spectrum.csv"))]
     dk = np.array([k for k, _ in D]); de = np.array([e for _, e in D])
     de = de / de.max()
     ax[0].loglog(dk, de, color="crimson", lw=1.6, label="real 2D NS DNS")
 # representative fluoddity spectrum (sdscan point nearest the preset_003 baseline sensorDist≈0.06)
-if os.path.exists("sdscan_spectra.csv"):
+if os.path.exists("data/sdscan_spectra.csv"):
     SP = {}
-    for r in csv.DictReader(open("sdscan_spectra.csv")):
+    for r in csv.DictReader(open("data/sdscan_spectra.csv")):
         SP.setdefault(float(r["sensorDist"]), ([], []))
         SP[float(r["sensorDist"])][0].append(int(r["k"])); SP[float(r["sensorDist"])][1].append(float(r["Ek"]))
     sd0 = min(SP, key=lambda s: abs(s - 0.06))
@@ -37,14 +37,14 @@ ax[0].set_title("Spectral shape: real 2D NS vs the toy"); ax[0].legend(fontsize=
 
 # ── (R) universality: slope vs forcing amplitude ────────────────────────────
 def norm(x): x = np.asarray(x, float); return x / np.median(x)
-if os.path.exists("ns2d_sweep.csv"):
-    rows = list(csv.DictReader(open("ns2d_sweep.csv")))
+if os.path.exists("data/ns2d_sweep.csv"):
+    rows = list(csv.DictReader(open("data/ns2d_sweep.csv")))
     amp = np.array([float(r["amp"]) for r in rows]); ens = np.array([float(r["enstSlope"]) for r in rows])
     ax[1].plot(norm(amp), ens, "o-", color="crimson", lw=1.8,
                label=f"real 2D NS (enstrophy range)  Δ={ens.max()-ens.min():.2f}")
 # fluoddity: forceGain axis from the OAT survey
-if os.path.exists("sweep_results.csv"):
-    fg = [(float(r["value"]), float(r["inSlope"])) for r in csv.DictReader(open("sweep_results.csv"))
+if os.path.exists("data/sweep_results.csv"):
+    fg = [(float(r["value"]), float(r["inSlope"])) for r in csv.DictReader(open("data/sweep_results.csv"))
           if r["axis"] == "forceGain"]
     fg.sort()
     fa = np.array([a for a, _ in fg]); fs = np.array([s for _, s in fg])

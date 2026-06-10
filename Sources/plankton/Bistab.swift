@@ -64,7 +64,7 @@ func runBistab() {
     say("\nbistab: \(sensorDists.count) sensorDist × \(reps) replicates (fresh IC each), "
       + "\(warmup)+\(accum) frames/run\n")
     var rows: [String] = ["sensorDist,rep,peakK,inSlope,inR2,E,Z"]
-    let url = URL(fileURLWithPath: "bistab_results.csv")
+    let url = Study.url("bistab_results.csv")
     var done = 0
     let total = sensorDists.count * reps
 

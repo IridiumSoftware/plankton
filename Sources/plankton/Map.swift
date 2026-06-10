@@ -97,7 +97,7 @@ func runMap() {
     }
     say("\n(-5/3 = -1.67 contour runs diagonally if drive & dissipation trade off)")
 
-    let url = URL(fileURLWithPath: "map_results.csv")
+    let url = Study.url("map_results.csv")
     try? rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     say("\nwrote \(url.path)  (\(rows.count - 1) cells)")
 }

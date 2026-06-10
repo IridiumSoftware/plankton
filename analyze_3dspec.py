@@ -31,7 +31,7 @@ def fit_slope(E, klo, khi):
     c, *_ = np.linalg.lstsq(A, y, rcond=None)
     return c[0], 1 - np.sum((y - A @ c)**2) / np.sum((y - y.mean())**2)
 
-rows = list(csv.DictReader(open("3dspec_manifest.csv")))
+rows = list(csv.DictReader(open("data/3dspec_manifest.csv")))
 fig, ax = plt.subplots(1, 2, figsize=(12, 4.8))
 cmap = plt.cm.viridis
 print("forceGain  peakK  fitwindow  forward-slope  R2")

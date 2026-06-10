@@ -22,5 +22,6 @@ __pycache__/
 *.pyc
 .paper-index.json
 
-# 3D velocity-field dumps (~25 MB each; regenerate with --3dspec)
+# 3D velocity-field dumps (~25 MB each; written to data/ by --3dspec, regenerable)
 vel3d_*.bin
+data/vel3d_*.bin

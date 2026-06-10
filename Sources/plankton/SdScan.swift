@@ -62,7 +62,7 @@ func runSdScan() {
       + "\(warmup)+\(accum) frames each (others = baseline)\n")
     var summary: [String] = ["sensorDist,E,Z,lambda,krms,peakK,invPeakK,inSlope,inR2,highSlope,highR2"]
     var spectra: [String] = ["sensorDist,k,Ek"]
-    let sumURL = URL(fileURLWithPath: "sdscan_summary.csv")
+    let sumURL = Study.url("sdscan_summary.csv")
 
     for (i, sd) in sensorDists.enumerated() {
         applyBaseline(); params.sensorDist = sd
@@ -88,7 +88,7 @@ func runSdScan() {
         say(String(format: "  [%2d/%2d] sensorDist=%7g  peakK=%3d  inSlope=%+.2f (R\u{00B2}%.2f)  lambda=%6.2f  E=%.4f",
                    i + 1, nSD, sd, f.peakK, f.inSlope, f.inR2, lambda, e))
     }
-    try? spectra.joined(separator: "\n").write(to: URL(fileURLWithPath: "sdscan_spectra.csv"),
+    try? spectra.joined(separator: "\n").write(to: Study.url("sdscan_spectra.csv"),
                                                atomically: true, encoding: .utf8)
     say("\nwrote sdscan_summary.csv (\(summary.count - 1) rows) + sdscan_spectra.csv")
 }
