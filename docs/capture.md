@@ -34,11 +34,17 @@ right-click = breed.)
 captures/
   creatures/creature_001.fluo      # full-state snapshots (binary: magic "FLUO" + buffers + params)
   paths/path_001.fluopath          # start state + (frame, param, value) change list
+  creatures3d/creature3d_001.fluo3 # same, 3D engine (magic "FLU3")
+  paths3d/path3d_001.fluo3path     # same, 3D engine
 ```
 
-Both live under the run directory. `.fluo` is `~`(8·N² + 16·particleCount)` bytes — a few
+All live under the run directory. `.fluo` is `~`(8·N² + 16·particleCount)` bytes — a few
 MB to ~28 MB at the default 1024² / 2²⁰ agents. The dimensions are checked on load (a capture
 only restores into a sim of the same grid + agent count).
+
+The 3D format is versioned: **v2** stores all 8 cohort brains (since 3D breeding landed);
+**v1** files (single brain) still load — the brain is replicated into every cohort, so a
+breed on a restored v1 creature starts from 7 mutants of its original brain.
 
 ## Why bit-for-bit matters
 

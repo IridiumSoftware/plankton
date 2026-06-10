@@ -20,8 +20,9 @@ Each agent steers through an **80-parameter symmetric Fourier "brain"**
 (10 Fourier centers, evaluated twice mirror-averaged so there's no
 clockwise/counter-clockwise bias), plus a **chemotaxis** term that lets them
 aggregate into membranes and cells. You **breed** behaviors by re-rolling and
-selecting (right-click in 2D), and the same engine doubles as a **soft
-visualizer of the underlying fluid** (vorticity, enstrophy, divergence, energy).
+selecting (right-click, in both 2D and 3D), and the same engine doubles as a
+**soft visualizer of the underlying fluid** (vorticity, enstrophy, divergence,
+energy — including a fluid-only 3D vortex-tube view).
 
 ## Build & run
 
@@ -61,10 +62,11 @@ agents overlaid. A live, grouped slider panel (top-left) tunes everything.
 - **`j` / `k`** — record / replay a parameter path.
 - **Save / Load / Reset** buttons — presets (params + brains) to `presets/*.json`.
 - **Diag** toggle — research mode (HUD + plot + field calcs) vs art mode (perf).
-- **`viewMode`** slider — dye art / **vorticity** ω / **enstrophy** |ω|² /
+- **`viewMode`** dropdown — dye art / **vorticity** ω / **enstrophy** |ω|² /
   **divergence** field. With the **E / Z / |ω|ₘₐₓ / div** HUD and a scrolling
   **E/Z time-series plot** (the research-viz layer; ties to the
   `navier-stokes` program — ω is exactly that 2D solver's state variable).
+- Every slider has **−/+ steppers** for one-step fine-tuning.
 
 ## Faithful fluid
 

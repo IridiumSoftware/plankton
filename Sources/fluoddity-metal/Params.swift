@@ -33,7 +33,7 @@ final class Params {
     var diagnosticsOn = true         // research HUD + plot + field calcs (toggle off for perf)
 }
 
-// Mirrors `struct MoveParams` in Shaders.source (5 floats, 20 bytes).
+// Mirrors `struct MoveParams` in Shaders.source (8 floats, 32 bytes).
 struct MoveParamsGPU {
     var swim: Float
     var sensorDist: Float

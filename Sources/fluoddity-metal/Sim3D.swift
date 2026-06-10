@@ -13,9 +13,10 @@ struct MoveParams3GPU {
     var swim, sensorDist, sensorAngle, turn, axialForce, fluidPull, senseScale, planeSamples, cohesion: Float
 }
 
-// Stage-2a 3D simulation: agents force a 128³ incompressible fluid and ride it.
-// Per frame: advect velocity → damp → splat agent velocities → project
-// (divergence, 6-neighbour Jacobi, subtract gradient) → agents ride the field.
+// Stage-2a 3D simulation: agents force an N³ incompressible fluid (default 128,
+// the app passes 160) and ride it. Per frame: advect velocity → ν∇² diffuse →
+// weak drag → net-zero dipole splat → project (divergence, 6-neighbour Jacobi,
+// subtract gradient) → MacCormack dye advect → agents move (brain + chemotaxis).
 final class Sim3D {
     let count: Int
     let dim: SIMD3<UInt32>

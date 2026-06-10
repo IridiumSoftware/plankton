@@ -1,10 +1,12 @@
 // 3D engine shaders.
-// Stage 2a: a real 3D incompressible fluid on a 128³ grid — agents splat their
-// velocity (forcing), the field is advected (semi-Lagrangian) + damped, then
-// PROJECTED divergence-free via a 6-neighbour Jacobi pressure solve (the discrete
-// Hodge projection in 3D). Agents ride the projected field. Rendered as an
-// additive point cloud through the orbital camera.
-// Stage 2b adds the Monte-Carlo tangent-plane Fourier brain.
+// Stage 2a: a real 3D incompressible fluid on an N³ grid (default 128³ headless;
+// the app runs 160³) — agents splat net-zero force DIPOLES (forcing), the field
+// is advected (semi-Lagrangian) + ν∇²-diffused + weakly dragged, then PROJECTED
+// divergence-free via a 6-neighbour Jacobi pressure solve (the discrete Hodge
+// projection in 3D). Dye advects via MacCormack (second-order). Agents ride the
+// projected field. Rendered as a ray-marched volume (dye or fluid-only vorticity)
+// plus an optional cohort-tinted point overlay, through the orbital camera.
+// Stage 2b adds the Monte-Carlo tangent-plane Fourier brain (8 breedable cohorts).
 //
 // Velocity stored interleaved (vel[3i + {0,1,2}]) in cells/frame; periodic cube.
 enum Shaders3D {
