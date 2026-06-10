@@ -182,22 +182,9 @@ final class Simulation {
             e.setBytes(&dimv, length: 8, index: 2)
         }
         swap(&vel, &velTmp)
-        // 7a. vorticity + divergence of the projected field (only when shown/needed)
-        let vm = Int(params.viewMode + 0.5)
-        if params.diagnosticsOn || vm == 1 || vm == 2 {
-            field(cmd, vortPipe) { e in
-                e.setBuffer(self.vel, offset: 0, index: 0)
-                e.setBuffer(self.vort, offset: 0, index: 1)
-                e.setBytes(&dimv, length: 8, index: 2)
-            }
-        }
-        if params.diagnosticsOn || vm == 3 {
-            field(cmd, divPipe) { e in
-                e.setBuffer(self.vel, offset: 0, index: 0)
-                e.setBuffer(self.divDisp, offset: 0, index: 1)
-                e.setBytes(&dimv, length: 8, index: 2)
-            }
-        }
+        // (vorticity/divergence viz passes live in encodeViz(), called by the
+        // renderer EVERY frame — not here — so the research views stay current
+        // even when the sim is paused (simSpeed 0) or a capture was restored.)
         // 7. advect dye by the projected field (+ decay)
         field(cmd, advectDyePipe) { e in
             e.setBuffer(self.dye, offset: 0, index: 0)
@@ -266,6 +253,29 @@ final class Simulation {
     }
 
     // Read / write all cohort brains (for presets).
+    // Research-viz fields (ω, ∇·u) of the CURRENT velocity — called by the
+    // renderer every frame, independent of the sim stepping, so the vorticity/
+    // enstrophy/divergence views can never go stale or blank (e.g. switching
+    // viewMode while paused at simSpeed 0, or right after a capture restore).
+    func encodeViz(into cmd: MTLCommandBuffer) {
+        var dimv = dim
+        let vm = Int(params.viewMode + 0.5)
+        if params.diagnosticsOn || vm == 1 || vm == 2 {
+            field(cmd, vortPipe) { e in
+                e.setBuffer(self.vel, offset: 0, index: 0)
+                e.setBuffer(self.vort, offset: 0, index: 1)
+                e.setBytes(&dimv, length: 8, index: 2)
+            }
+        }
+        if params.diagnosticsOn || vm == 3 {
+            field(cmd, divPipe) { e in
+                e.setBuffer(self.vel, offset: 0, index: 0)
+                e.setBuffer(self.divDisp, offset: 0, index: 1)
+                e.setBytes(&dimv, length: 8, index: 2)
+            }
+        }
+    }
+
     func ruleSnapshot() -> [Float] {
         let n = Simulation.nCohorts * 80
         let p = ruleBuffer.contents().bindMemory(to: Float.self, capacity: n)

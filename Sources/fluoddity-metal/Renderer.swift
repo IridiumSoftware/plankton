@@ -169,6 +169,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         var steps = 0
         while simAcc >= 1, steps < 8 { sim.encode(into: cmd); simAcc -= 1; steps += 1 }
         if steps == 8 { simAcc = 0 }   // don't bank a backlog the GPU can't pay down
+        sim.encodeViz(into: cmd)       // ω/div views refresh every frame, even paused
 
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.01, green: 0.01, blue: 0.03, alpha: 1)

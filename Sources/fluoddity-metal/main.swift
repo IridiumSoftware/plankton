@@ -52,6 +52,10 @@ if CommandLine.arguments.contains("--bistab") {
     runBistab()
     exit(0)
 }
+if CommandLine.arguments.contains("--vortprobe") {
+    runVortProbe()
+    exit(0)
+}
 if CommandLine.arguments.contains("--3dspec") {
     run3dSpec()
     exit(0)

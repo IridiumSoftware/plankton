@@ -39,6 +39,7 @@ swift run fluoddity-metal --simtest     # 2D fluid incompressibility + stability
 swift run fluoddity-metal --3dtest      # 3D fluid incompressibility + stability
 swift run fluoddity-metal --capturetest # full-state capture round-trips bit-for-bit
 swift run fluoddity-metal --spectest    # FFT energy-spectrum estimator check
+swift run fluoddity-metal --vortprobe   # research views stay live (incl. paused)
 
 # headless studies (write CSVs; see docs/spectrum_study.md):
 swift run fluoddity-metal --sweep       # parameter survey        → sweep_results.csv
