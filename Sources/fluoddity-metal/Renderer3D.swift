@@ -9,6 +9,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     private let volumePipe: MTLRenderPipelineState
     let camera = Camera3D()
     var densityScale: Float = 0.006
+    var sharpness: Float = 1.5      // ray-march transfer gamma — >1 cuts faint halo, crisper edges
     var colorMode: Float = 0                    // 0 density, 1 flow direction, 2 speed
     // capture (set by App3D, which owns the knob list)
     var onCaptureStatus: ((String) -> Void)?
@@ -106,6 +107,8 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         enc.setFragmentBuffer(sim.vel, offset: 0, index: 4)
         var cm = colorMode
         enc.setFragmentBytes(&cm, length: 4, index: 5)
+        var sh = sharpness
+        enc.setFragmentBytes(&sh, length: 4, index: 6)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
 

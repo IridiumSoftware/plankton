@@ -53,6 +53,7 @@ final class App3D: NSObject, NSApplicationDelegate {
             Knob3D(name: "colorMode",    get: { r.colorMode },      set: { r.colorMode = $0 },      lo: 0,     hi: 2),
             // append-only: captures + path journals serialize params by knob index
             Knob3D(name: "simSpeed",     get: { sim.simSpeed },     set: { sim.simSpeed = $0 },     lo: 0,     hi: 4),
+            Knob3D(name: "sharpness",    get: { r.sharpness },      set: { r.sharpness = $0 },      lo: 0.5,   hi: 4),
         ]
         panel = Panel3D(knobs: knobs)
         panel.onReroll = { [weak self] in self?.renderer.reroll() }

@@ -302,7 +302,8 @@ enum Shaders3D {
                                       constant float4x4 &invVP     [[buffer(2)]],
                                       constant float &densityScale [[buffer(3)]],
                                       device const float *vfield   [[buffer(4)]],
-                                      constant float &colorMode    [[buffer(5)]]) {
+                                      constant float &colorMode    [[buffer(5)]],
+                                      constant float &sharpness    [[buffer(6)]]) {
         int cm = int(colorMode + 0.5);
         float3 bg = float3(0.02, 0.02, 0.05);
         float2 ndc = in.uv * 2.0 - 1.0;
@@ -322,7 +323,10 @@ enum Shaders3D {
         float3 acc = float3(0.0); float trans = 1.0;
         for (int i = 0; i < STEPS; i++) {
             float3 pos = ro + (tn + (float(i) + 0.5) * dt) * rd;
-            float dens = sampleScalar3(dye, pos * float3(d), d) * densityScale;
+            // sharpness = transfer-function gamma: >1 crushes the faint trilinear
+            // halo around structures and keeps the cores ⇒ crisper boundaries on
+            // zoom (the data is 160³ voxels; this sharpens the MAPPING, not the data)
+            float dens = pow(max(sampleScalar3(dye, pos * float3(d), d), 0.0) * densityScale, sharpness);
             if (dens > 0.002) {
                 float a = 1.0 - exp(-dens * dt * 15.0);
                 float3 emit;
