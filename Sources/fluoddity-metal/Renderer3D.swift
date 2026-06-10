@@ -11,8 +11,9 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     let camera = Camera3D()
     var densityScale: Float = 0.006
     var sharpness: Float = 1.5      // ray-march transfer gamma — >1 cuts faint halo, crisper edges
-    var colorMode: Float = 0                    // 0 density, 1 flow direction, 2 speed
+    var colorMode: Float = 0                    // 0 density, 1 flow dir, 2 speed, 3 vorticity (fluid-only)
     var pointAlpha: Float = 0.0     // cohort-tinted agent overlay (0 = off; raise to see species when breeding)
+    var vortScale: Float = 30       // |ω| → opacity scale for the fluid-only vorticity view
     // capture (set by App3D, which owns the knob list)
     var onCaptureStatus: ((String) -> Void)?
     var paramRead: () -> [Float] = { [] }
@@ -138,6 +139,8 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         enc.setFragmentBytes(&cm, length: 4, index: 5)
         var sh = sharpness
         enc.setFragmentBytes(&sh, length: 4, index: 6)
+        var vs = vortScale
+        enc.setFragmentBytes(&vs, length: 4, index: 7)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         // cohort-tinted agent overlay (species identity for breeding)

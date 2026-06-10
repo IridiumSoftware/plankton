@@ -301,6 +301,17 @@ enum Shaders3D {
         return float4(in.col * a, a);
     }
 
+    // vorticity ω = ∇×u via central differences (cells/frame units) — the
+    // fluid-only volume view samples this instead of the agent-deposited dye
+    static inline float3 curl3(device const float *v, float3 p, uint3 d) {
+        float3 xp = sampleVel3(v, p + float3(1,0,0), d), xm = sampleVel3(v, p - float3(1,0,0), d);
+        float3 yp = sampleVel3(v, p + float3(0,1,0), d), ym = sampleVel3(v, p - float3(0,1,0), d);
+        float3 zp = sampleVel3(v, p + float3(0,0,1), d), zm = sampleVel3(v, p - float3(0,0,1), d);
+        return 0.5 * float3((yp.z - ym.z) - (zp.y - zm.y),
+                            (zp.x - zm.x) - (xp.z - xm.z),
+                            (xp.y - xm.y) - (yp.x - ym.x));
+    }
+
     // ── volumetric ray-march of the dye field (Stage 3) ───────────────────
     struct RMOut { float4 position [[position]]; float2 uv; };
     vertex RMOut raymarch_vertex(uint vid [[vertex_id]]) {
@@ -314,7 +325,8 @@ enum Shaders3D {
                                       constant float &densityScale [[buffer(3)]],
                                       device const float *vfield   [[buffer(4)]],
                                       constant float &colorMode    [[buffer(5)]],
-                                      constant float &sharpness    [[buffer(6)]]) {
+                                      constant float &sharpness    [[buffer(6)]],
+                                      constant float &vortScale    [[buffer(7)]]) {
         int cm = int(colorMode + 0.5);
         float3 bg = float3(0.02, 0.02, 0.05);
         float2 ndc = in.uv * 2.0 - 1.0;
@@ -337,11 +349,25 @@ enum Shaders3D {
             // sharpness = transfer-function gamma: >1 crushes the faint trilinear
             // halo around structures and keeps the cores ⇒ crisper boundaries on
             // zoom (the data is 160³ voxels; this sharpens the MAPPING, not the data)
-            float dens = pow(max(sampleScalar3(dye, pos * float3(d), d), 0.0) * densityScale, sharpness);
+            float dens;
+            float3 vortEmit = float3(0.0);
+            if (cm == 3) {
+                // fluid-only view: opacity from |∇×u| (vortex tubes — where the
+                // dynamics live), color from the vorticity DIRECTION. The agents'
+                // dye plays no part; you see the NS fluid itself.
+                float3 om = curl3(vfield, pos * float3(d), d);
+                float w = length(om);
+                dens = pow(w * vortScale, sharpness);
+                vortEmit = 0.5 + 0.5 * (w > 1e-6 ? om / w : float3(0.0));
+            } else {
+                dens = pow(max(sampleScalar3(dye, pos * float3(d), d), 0.0) * densityScale, sharpness);
+            }
             if (dens > 0.002) {
                 float a = 1.0 - exp(-dens * dt * 15.0);
                 float3 emit;
-                if (cm == 0) {                        // density gradient
+                if (cm == 3) {                        // vorticity direction → RGB
+                    emit = vortEmit;
+                } else if (cm == 0) {                 // density gradient
                     emit = mix(float3(0.1, 0.4, 0.9), float3(1.0, 0.6, 0.2), clamp(dens, 0.0, 1.0));
                 } else {
                     float3 fv = sampleVel3(vfield, pos * float3(d), d);

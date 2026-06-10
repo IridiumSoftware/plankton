@@ -14,8 +14,9 @@ final class ControlsPanel: NSView {
 
     private let params: Params
     private let knobs: [Knob]
-    private var sliders: [NSSlider] = []
-    private var valueLabels: [NSTextField] = []
+    private var sliders: [NSSlider?] = []        // nil where the knob is a dropdown
+    private var popups: [NSPopUpButton?] = []    // nil where the knob is a slider
+    private var valueLabels: [NSTextField?] = [] // nil for dropdowns (title shows the value)
     private var diagButton: NSButton?
 
     init(params: Params, knobs: [Knob]) {
@@ -63,20 +64,31 @@ final class ControlsPanel: NSView {
             let y = cursor - rowH + 3
             addSubview(label(k.name, NSRect(x: 10, y: y, width: 98, height: 18), .left))
 
-            let slider = NSSlider(frame: NSRect(x: 112, y: y, width: 156, height: 20))
-            slider.minValue = Double(k.lo)
-            slider.maxValue = Double(k.hi)
-            slider.doubleValue = Double(params[keyPath: k.kp])
-            slider.isContinuous = true
-            slider.target = self
-            slider.action = #selector(sliderChanged(_:))
-            slider.tag = i
-            sliders.append(slider)
-            addSubview(slider)
+            if let opts = k.options {
+                let pop = NSPopUpButton(frame: NSRect(x: 112, y: y - 2, width: 206, height: 24), pullsDown: false)
+                pop.addItems(withTitles: opts)
+                pop.selectItem(at: min(max(Int(params[keyPath: k.kp] + 0.5), 0), opts.count - 1))
+                pop.target = self
+                pop.action = #selector(popupChanged(_:))
+                pop.tag = i
+                popups.append(pop); sliders.append(nil); valueLabels.append(nil)
+                addSubview(pop)
+            } else {
+                let slider = NSSlider(frame: NSRect(x: 112, y: y, width: 156, height: 20))
+                slider.minValue = Double(k.lo)
+                slider.maxValue = Double(k.hi)
+                slider.doubleValue = Double(params[keyPath: k.kp])
+                slider.isContinuous = true
+                slider.target = self
+                slider.action = #selector(sliderChanged(_:))
+                slider.tag = i
+                sliders.append(slider); popups.append(nil)
+                addSubview(slider)
 
-            let v = label(fmt(params[keyPath: k.kp]), NSRect(x: 272, y: y, width: 46, height: 18), .right)
-            valueLabels.append(v)
-            addSubview(v)
+                let v = label(fmt(params[keyPath: k.kp]), NSRect(x: 272, y: y, width: 46, height: 18), .right)
+                valueLabels.append(v)
+                addSubview(v)
+            }
 
             cursor -= rowH
         }
@@ -84,11 +96,13 @@ final class ControlsPanel: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    // Re-read params into every slider + value label (after load / reset).
+    // Re-read params into every slider/dropdown + value label (after load / reset).
     func refresh() {
         for (i, k) in knobs.enumerated() {
-            sliders[i].doubleValue = Double(params[keyPath: k.kp])
-            valueLabels[i].stringValue = fmt(params[keyPath: k.kp])
+            let v = params[keyPath: k.kp]
+            sliders[i]?.doubleValue = Double(v)
+            valueLabels[i]?.stringValue = fmt(v)
+            if let pop = popups[i] { pop.selectItem(at: min(max(Int(v + 0.5), 0), pop.numberOfItems - 1)) }
         }
     }
 
@@ -96,8 +110,13 @@ final class ControlsPanel: NSView {
         let k = knobs[s.tag]
         let v = Float(s.doubleValue)
         params[keyPath: k.kp] = v
-        valueLabels[s.tag].stringValue = fmt(v)
+        valueLabels[s.tag]?.stringValue = fmt(v)
         onResetAvg?()   // a param change alters the flow → restart the spectrum average
+    }
+
+    @objc private func popupChanged(_ p: NSPopUpButton) {
+        params[keyPath: knobs[p.tag].kp] = Float(p.indexOfSelectedItem)
+        onResetAvg?()
     }
 
     @objc private func buttonClicked(_ b: NSButton) {

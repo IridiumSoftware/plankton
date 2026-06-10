@@ -34,28 +34,31 @@ final class App3D: NSObject, NSApplicationDelegate {
         let sim = renderer.sim
         let r = renderer!
         let knobs: [Knob3D] = [
-            Knob3D(name: "swim",         get: { sim.swim },         set: { sim.swim = $0 },         lo: 0,     hi: 0.30),
-            Knob3D(name: "sensorDist",   get: { sim.sensorDist },   set: { sim.sensorDist = $0 },   lo: 0.001, hi: 0.08),
-            Knob3D(name: "sensorAngle",  get: { sim.sensorAngle },  set: { sim.sensorAngle = $0 },  lo: 0,     hi: 1.5),
-            Knob3D(name: "turn",         get: { sim.turn },         set: { sim.turn = $0 },         lo: 0,     hi: 0.30),
-            Knob3D(name: "axialForce",   get: { sim.axialForce },   set: { sim.axialForce = $0 },   lo: 0,     hi: 0.10),
-            Knob3D(name: "senseScale",   get: { sim.senseScale },   set: { sim.senseScale = $0 },   lo: 0,     hi: 10),
-            Knob3D(name: "planeSamples", get: { sim.planeSamples }, set: { sim.planeSamples = $0 }, lo: 1,     hi: 6),
-            Knob3D(name: "fluidPull",    get: { sim.fluidPull },    set: { sim.fluidPull = $0 },    lo: 0,     hi: 6),
-            Knob3D(name: "velDamp",      get: { sim.velDamp },      set: { sim.velDamp = $0 },      lo: 0.80,  hi: 0.999),
-            Knob3D(name: "viscosity",    get: { sim.viscosity },    set: { sim.viscosity = $0 },    lo: 0,     hi: 0.16),
-            Knob3D(name: "dipoleLen",    get: { sim.dipoleLen },    set: { sim.dipoleLen = $0 },    lo: 0,     hi: 6),
-            Knob3D(name: "cohesion",     get: { sim.cohesion },     set: { sim.cohesion = $0 },     lo: 0,     hi: 0.60),
-            Knob3D(name: "forceGain",    get: { sim.forceGain },    set: { sim.forceGain = $0 },    lo: 0,     hi: 3),
-            Knob3D(name: "dyeDecay",     get: { sim.dyeDecay },     set: { sim.dyeDecay = $0 },     lo: 0.90,  hi: 0.999),
-            Knob3D(name: "dyeAmount",    get: { sim.dyeAmount },    set: { sim.dyeAmount = $0 },    lo: 0,     hi: 4),
-            Knob3D(name: "densityScale", get: { r.densityScale },   set: { r.densityScale = $0 },   lo: 0.001, hi: 0.10),
-            Knob3D(name: "colorMode",    get: { r.colorMode },      set: { r.colorMode = $0 },      lo: 0,     hi: 2),
-            // append-only: captures + path journals serialize params by knob index
-            Knob3D(name: "simSpeed",     get: { sim.simSpeed },     set: { sim.simSpeed = $0 },     lo: 0,     hi: 4),
-            Knob3D(name: "sharpness",    get: { r.sharpness },      set: { r.sharpness = $0 },      lo: 0.5,   hi: 4),
-            Knob3D(name: "mutationStrength", get: { sim.mutationStrength }, set: { sim.mutationStrength = $0 }, lo: 0, hi: 1.5),
-            Knob3D(name: "pointAlpha",   get: { r.pointAlpha },     set: { r.pointAlpha = $0 },     lo: 0,     hi: 0.6),
+            // ARRAY ORDER = capture/path serialization order: append-only.
+            // `group` is display-only bucketing (Panel3D regroups visually).
+            Knob3D(name: "swim",         get: { sim.swim },         set: { sim.swim = $0 },         lo: 0,     hi: 0.30,  group: "Agents"),
+            Knob3D(name: "sensorDist",   get: { sim.sensorDist },   set: { sim.sensorDist = $0 },   lo: 0.001, hi: 0.08,  group: "Agents"),
+            Knob3D(name: "sensorAngle",  get: { sim.sensorAngle },  set: { sim.sensorAngle = $0 },  lo: 0,     hi: 1.5,   group: "Agents"),
+            Knob3D(name: "turn",         get: { sim.turn },         set: { sim.turn = $0 },         lo: 0,     hi: 0.30,  group: "Agents"),
+            Knob3D(name: "axialForce",   get: { sim.axialForce },   set: { sim.axialForce = $0 },   lo: 0,     hi: 0.10,  group: "Agents"),
+            Knob3D(name: "senseScale",   get: { sim.senseScale },   set: { sim.senseScale = $0 },   lo: 0,     hi: 10,    group: "Agents"),
+            Knob3D(name: "planeSamples", get: { sim.planeSamples }, set: { sim.planeSamples = $0 }, lo: 1,     hi: 6,     group: "Agents"),
+            Knob3D(name: "fluidPull",    get: { sim.fluidPull },    set: { sim.fluidPull = $0 },    lo: 0,     hi: 6,     group: "Fluid"),
+            Knob3D(name: "velDamp",      get: { sim.velDamp },      set: { sim.velDamp = $0 },      lo: 0.80,  hi: 0.999, group: "Fluid"),
+            Knob3D(name: "viscosity",    get: { sim.viscosity },    set: { sim.viscosity = $0 },    lo: 0,     hi: 0.16,  group: "Fluid"),
+            Knob3D(name: "dipoleLen",    get: { sim.dipoleLen },    set: { sim.dipoleLen = $0 },    lo: 0,     hi: 6,     group: "Fluid"),
+            Knob3D(name: "cohesion",     get: { sim.cohesion },     set: { sim.cohesion = $0 },     lo: 0,     hi: 0.60,  group: "Agents"),
+            Knob3D(name: "forceGain",    get: { sim.forceGain },    set: { sim.forceGain = $0 },    lo: 0,     hi: 3,     group: "Fluid"),
+            Knob3D(name: "dyeDecay",     get: { sim.dyeDecay },     set: { sim.dyeDecay = $0 },     lo: 0.90,  hi: 0.999, group: "Dye"),
+            Knob3D(name: "dyeAmount",    get: { sim.dyeAmount },    set: { sim.dyeAmount = $0 },    lo: 0,     hi: 4,     group: "Dye"),
+            Knob3D(name: "densityScale", get: { r.densityScale },   set: { r.densityScale = $0 },   lo: 0.001, hi: 0.10,  group: "Display"),
+            Knob3D(name: "colorMode",    get: { r.colorMode },      set: { r.colorMode = $0 },      lo: 0,     hi: 3,     group: "Display",
+                   options: ["dye density", "flow direction", "flow speed", "fluid only: vorticity"]),
+            Knob3D(name: "simSpeed",     get: { sim.simSpeed },     set: { sim.simSpeed = $0 },     lo: 0,     hi: 4,     group: "Time"),
+            Knob3D(name: "sharpness",    get: { r.sharpness },      set: { r.sharpness = $0 },      lo: 0.5,   hi: 4,     group: "Display"),
+            Knob3D(name: "mutationStrength", get: { sim.mutationStrength }, set: { sim.mutationStrength = $0 }, lo: 0, hi: 1.5, group: "Agents"),
+            Knob3D(name: "pointAlpha",   get: { r.pointAlpha },     set: { r.pointAlpha = $0 },     lo: 0,     hi: 0.6,   group: "Display"),
+            Knob3D(name: "vortScale",    get: { r.vortScale },      set: { r.vortScale = $0 },      lo: 1,     hi: 200,   group: "Display"),
         ]
         panel = Panel3D(knobs: knobs)
         panel.onReroll = { [weak self] in self?.renderer.reroll() }
