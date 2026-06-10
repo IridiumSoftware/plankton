@@ -51,6 +51,8 @@ final class App3D: NSObject, NSApplicationDelegate {
             Knob3D(name: "dyeAmount",    get: { sim.dyeAmount },    set: { sim.dyeAmount = $0 },    lo: 0,     hi: 4),
             Knob3D(name: "densityScale", get: { r.densityScale },   set: { r.densityScale = $0 },   lo: 0.001, hi: 0.10),
             Knob3D(name: "colorMode",    get: { r.colorMode },      set: { r.colorMode = $0 },      lo: 0,     hi: 2),
+            // append-only: captures + path journals serialize params by knob index
+            Knob3D(name: "simSpeed",     get: { sim.simSpeed },     set: { sim.simSpeed = $0 },     lo: 0,     hi: 4),
         ]
         panel = Panel3D(knobs: knobs)
         panel.onReroll = { [weak self] in self?.renderer.reroll() }

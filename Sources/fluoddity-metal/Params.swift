@@ -29,6 +29,7 @@ final class Params {
     var mutationStrength: Float = 0.3 // right-click breed: mutation amount
     var viewMode: Float    = 0.0     // 0 dye art, 1 vorticity, 2 enstrophy, 3 divergence
     var vortScale: Float   = 3.0     // vorticity/enstrophy display scale
+    var simSpeed: Float    = 1.0     // sim steps per rendered frame (<1 = slow-mo via frame skip, 0 = pause)
     var diagnosticsOn = true         // research HUD + plot + field calcs (toggle off for perf)
 }
 
@@ -86,4 +87,7 @@ let engineKnobs: [Knob] = [
     // ── Research (diagnostics) ──
     Knob(name: "viewMode",    kp: \.viewMode,    lo: 0.0,   hi: 3.0,   step: 1.0,   group: "Research"),
     Knob(name: "vortScale",   kp: \.vortScale,   lo: 0.5,   hi: 20.0,  step: 0.5,   group: "Research"),
+    // ── Time ── (MUST stay last: captures + path journals serialize params by
+    // knob index, so new knobs are append-only to keep old .fluo files valid)
+    Knob(name: "simSpeed",    kp: \.simSpeed,    lo: 0.0,   hi: 4.0,   step: 0.05,  group: "Time"),
 ]

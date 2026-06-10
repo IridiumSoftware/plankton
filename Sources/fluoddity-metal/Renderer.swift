@@ -19,6 +19,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     var onCaptureStatus: ((String) -> Void)?   // capture/restore/path status → on-screen slot label
     private let spectrum = Spectrum(n: 1024)   // == fieldDim: full-res, no aliasing
     private var hudFrame = 0
+    private var simAcc: Float = 0   // fractional sim-step accumulator (simSpeed)
     private let journal = PathJournal()        // param-trajectory record/replay (capture paths)
     private var creatureLoadIdx = -1           // cycles through captured creatures on restore
 
@@ -162,7 +163,12 @@ final class Renderer: NSObject, MTKViewDelegate {
             onSpectrum?(spectrum.ek, spectrum.frames)
         }
 
-        sim.encode(into: cmd)
+        // simSpeed: accumulate fractional steps — ≥1 runs that many sim steps per
+        // frame (capped), <1 steps only on some frames (slow-mo), 0 pauses.
+        simAcc += params.simSpeed
+        var steps = 0
+        while simAcc >= 1, steps < 8 { sim.encode(into: cmd); simAcc -= 1; steps += 1 }
+        if steps == 8 { simAcc = 0 }   // don't bank a backlog the GPU can't pay down
 
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.01, green: 0.01, blue: 0.03, alpha: 1)

@@ -51,6 +51,7 @@ final class Sim3D {
     var cohesion: Float = 0.15       // chemotaxis up the dye gradient → aggregation (the creature-maker)
     var dyeDecay: Float = 0.985
     var dyeAmount: Float = 1.0
+    var simSpeed: Float = 1.0        // sim steps per rendered frame (<1 = slow-mo via frame skip, 0 = pause)
     private var frame: UInt32 = 0
 
     init(device: MTLDevice, library: MTLLibrary, count: Int = 1 << 20, fieldDim: Int = 128) {

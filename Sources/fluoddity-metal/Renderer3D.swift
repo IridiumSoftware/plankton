@@ -16,6 +16,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     var paramWrite: (Int, Float) -> Void = { _, _ in }
     private let journal = PathJournal()
     private var creatureLoadIdx = -1
+    private var simAcc: Float = 0   // fractional sim-step accumulator (simSpeed)
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         queue = device.makeCommandQueue()!
@@ -83,7 +84,13 @@ final class Renderer3D: NSObject, MTKViewDelegate {
 
         journal.tickReplay(paramWrite)   // applies scheduled param changes (no-op unless replaying)
         journal.tickRecord(paramRead)    // records param deltas (no-op unless recording)
-        sim.encode(into: cmd)
+
+        // simSpeed: accumulate fractional steps — ≥1 runs that many sim steps per
+        // frame (capped), <1 steps only on some frames (slow-mo), 0 pauses.
+        simAcc += sim.simSpeed
+        var steps = 0
+        while simAcc >= 1, steps < 8 { sim.encode(into: cmd); simAcc -= 1; steps += 1 }
+        if steps == 8 { simAcc = 0 }   // don't bank a backlog the GPU can't pay down
 
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.02, green: 0.02, blue: 0.05, alpha: 1)
