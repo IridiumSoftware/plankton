@@ -2,8 +2,8 @@
 """
 Collapse test for the plankton spectrum study.
 
-  python3 analyze_collapse.py            # OAT survey   (sweep_results.csv, 44 sparse pts)
-  python3 analyze_collapse.py map        # 2D map       (map_results.csv, 36 joint cells)
+  python3 study/analyze_collapse.py            # OAT survey   (sweep_results.csv, 44 sparse pts)
+  python3 study/analyze_collapse.py map        # 2D map       (map_results.csv, 36 joint cells)
 
 Question: is there a single control variable onto which the inertial slope
 collapses — slope = f(one number)? We reconstruct each row's full parameter
@@ -12,6 +12,7 @@ input-based drive/drag), and rank by |Pearson r| against inSlope. The MAP is the
 proper substrate — its forceGain×velDamp grid samples the joint space, unlike the
 OAT excursions which confound. stdlib only. Writes collapse_table_<src>.csv.
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import csv, json, math, sys
 
 src = sys.argv[1] if len(sys.argv) > 1 else "sweep"

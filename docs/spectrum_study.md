@@ -106,7 +106,7 @@ spectral peak), non-monotonically, maxing near sensorDist ≈ 0.012 → peak k �
 
 ### 2.4 Collapse: clean in-plane, partial globally
 
-The collapse test (`analyze_collapse.py [map|sweep]`) ranks candidate control
+The collapse test (`study/analyze_collapse.py [map|sweep]`) ranks candidate control
 variables by how tightly the slope collapses onto each. The answer depends
 critically on the *sampling*:
 
@@ -223,7 +223,7 @@ a time.
 ### 2.8 Calibration against a real 2D NS DNS
 
 To ground the toy against ground truth, I built a forced 2D Navier–Stokes
-pseudospectral DNS (`ns2d_dns.py`: vorticity form, integrating-factor RK4, 2/3
+pseudospectral DNS (`study/ns2d_dns.py`: vorticity form, integrating-factor RK4, 2/3
 dealiasing, steady random forcing at k_f = 10 + large-scale drag). Correctness
 anchor (`selfcheck`): unforced inviscid Euler conserves energy and enstrophy to
 machine precision — the same solver-validation logic as the navier-stokes repo's
@@ -262,7 +262,7 @@ spectrum were set by fluid dynamics, it should *lock onto* −5/3 in 3D. It does
 
 A 3D spectrum probe (`--3dspec`: the 128³ incompressible engine, forcing swept
 over a fixed brain; velocity dumped and 3D-FFT'd, spherically binned in numpy via
-`analyze_3dspec.py`) gives, on the forward limb *above* the injection peak
+`study/analyze_3dspec.py`) gives, on the forward limb *above* the injection peak
 (Fig. 9):
 
 | forceGain | peakK | forward slope | R² |
@@ -318,28 +318,28 @@ range.)
 
 ```
 swift run plankton --spectest      # FFT estimator control check (peak at k=8)
-swift run plankton --sweep         # OAT survey      → sweep_results.csv
-swift run plankton --map           # 2D drive×damp   → map_results.csv
-swift run plankton --map3          # 3-axis +sensorDist → map3_results.csv
-swift run plankton --sdscan        # fine sensorDist sweep → sdscan_{summary,spectra}.csv
-swift run plankton --bistab        # multistability probe → bistab_results.csv
-.venv/bin/python analyze_collapse.py map  # collapse test (dense) → collapse_table_map.csv
-.venv/bin/python analyze_collapse.py map3 # 3-group test    → collapse_table_map3.csv
-.venv/bin/python make_figures.py          # figures 1-4 + the 2- & 3-group fits
-.venv/bin/python characterize_sd.py       # figures 5-6 + the resonance/threshold test
-.venv/bin/python bistab_analyze.py        # figure 7 + the multistability modality test
-.venv/bin/python ns2d_dns.py selfcheck    # real 2D NS DNS: Euler invariant conservation
-.venv/bin/python ns2d_dns.py sweep        # DNS forcing-amplitude sweep → ns2d_sweep.csv
-.venv/bin/python ns2d_dns.py run          # one DNS run → ns2d_spectrum.csv
-.venv/bin/python ns_compare.py            # figure 8: DNS vs the engine
+swift run plankton --sweep         # OAT survey      → data/sweep_results.csv
+swift run plankton --map           # 2D drive×damp   → data/map_results.csv
+swift run plankton --map3          # 3-axis +sensorDist → data/map3_results.csv
+swift run plankton --sdscan        # fine sensorDist sweep → data/sdscan_{summary,spectra}.csv
+swift run plankton --bistab        # multistability probe → data/bistab_results.csv
+.venv/bin/python study/analyze_collapse.py map  # collapse test (dense) → data/collapse_table_map.csv
+.venv/bin/python study/analyze_collapse.py map3 # 3-group test    → data/collapse_table_map3.csv
+.venv/bin/python study/make_figures.py          # figures 1-4 + the 2- & 3-group fits
+.venv/bin/python study/characterize_sd.py       # figures 5-6 + the resonance/threshold test
+.venv/bin/python study/bistab_analyze.py        # figure 7 + the multistability modality test
+.venv/bin/python study/ns2d_dns.py selfcheck    # real 2D NS DNS: Euler invariant conservation
+.venv/bin/python study/ns2d_dns.py sweep        # DNS forcing-amplitude sweep → data/ns2d_sweep.csv
+.venv/bin/python study/ns2d_dns.py run          # one DNS run → data/ns2d_spectrum.csv
+.venv/bin/python study/ns_compare.py            # figure 8: DNS vs the engine
 swift run plankton --3dspec        # 128³ 3D forcing sweep → vel3d_*.bin + manifest
-.venv/bin/python analyze_3dspec.py        # figure 9: 3D energy spectrum (numpy 3D FFT)
+.venv/bin/python study/analyze_3dspec.py        # figure 9: 3D energy spectrum (numpy 3D FFT)
 ```
 
 Artifacts: `{sweep,map,map3}_results.csv`, `sdscan_{summary,spectra}.csv`,
 `bistab_results.csv`, `ns2d_{spectrum,sweep}.csv`, `3dspec_manifest.csv`,
 `collapse_table_{map,map3,sweep}.csv`, `figures/fig1..fig9 *.png` (3D dumps
 `vel3d_*.bin` are gitignored — regenerate with `--3dspec`). Real-NS reference
-solver: `ns2d_dns.py`. Baseline
+solver: `study/ns2d_dns.py`. Baseline
 config: `presets/preset_003.json`. Slope code: `SpectrumFit.swift` (shared by
 the live `SpectrumView` and the headless harnesses).

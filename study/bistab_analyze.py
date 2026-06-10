@@ -4,8 +4,9 @@ Analyze the --bistab multistability probe. For each sensorDist, look at the
 spread of steady-state peakK across independent replicates (fresh IC each, same
 brain). Multimodal (>=2 populated, well-separated clusters) = multistability;
 a tight single cluster = noise / single-valued dependence.
-Writes figures/fig7_bistability.png. Run: .venv/bin/python bistab_analyze.py
+Writes figures/fig7_bistability.png. Run: .venv/bin/python study/bistab_analyze.py
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, csv

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Compare the real 2D NS DNS (ns2d_dns.py) to the plankton engine.
+Compare the real 2D NS DNS (study/ns2d_dns.py) to the plankton engine.
 Two contrasts (fig8):
   (L) spectral shape: DNS E(k) vs a representative fluoddity E(k), with -5/3 / -3 refs.
   (R) UNIVERSALITY: inertial slope vs forcing amplitude. Real 2D NS = flat
       (amplitude-independent); fluoddity = sloped (a dial). This is the calibration.
-Run: .venv/bin/python ns_compare.py
+Run: .venv/bin/python study/ns_compare.py
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, csv, os

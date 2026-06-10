@@ -10,6 +10,9 @@ All notable changes to **plankton** are documented here. The format follows
   `--3dspec`) now write their CSVs (and the 3dspec `.bin` dumps) under `data/`
   instead of the repo root; the Python analysis scripts read from `data/` too.
   Keeps the project root clean.
+- Moved the Python analysis scripts to `study/`. Each chdir's to the repo root
+  on startup, so they resolve `data/`, `presets/`, and `figures/` correctly no
+  matter where they're invoked from (e.g. `.venv/bin/python study/make_figures.py`).
 
 ## [0.1.0] — 2026-06-10
 

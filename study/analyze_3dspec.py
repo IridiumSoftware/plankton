@@ -7,6 +7,7 @@ inertial slope, and compares to the Kolmogorov -5/3 EXPECTED in 3D. The question
 is the 3D engine's slope ~ -5/3 and forcing-invariant (a real 3D cascade), or does
 it dial like the 2D engine? Writes figures/fig9_3d_spectrum.png.
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, csv

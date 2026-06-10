@@ -3,8 +3,9 @@
 Characterize the sensorDist (injection-scale) axis from the --sdscan output.
 Reads sdscan_summary.csv + sdscan_spectra.csv; writes figures/fig5_sensordist.png
 (4-panel) and figures/fig6_sd_spectra.png (spectral-shape overlay), and prints the
-resonance test. Run with: .venv/bin/python characterize_sd.py
+resonance test. Run with: .venv/bin/python study/characterize_sd.py
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, csv

@@ -2,8 +2,9 @@
 """
 Figures + collapse fit for the plankton spectrum study.
 Reads map_results.csv (2D forceGain×velDamp grid) and sweep_results.csv (OAT).
-Writes figures/*.png. Run with the project venv: .venv/bin/python make_figures.py
+Writes figures/*.png. Run with the project venv: .venv/bin/python study/make_figures.py
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, csv, os

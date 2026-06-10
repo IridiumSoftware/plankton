@@ -19,10 +19,11 @@ Correctness anchor (`selfcheck`): unforced inviscid Euler conserves energy and
 enstrophy exactly (until the forward cascade reaches the 2/3 cutoff) — same
 solver-validation logic as navier-stokes/scripts/spectral_2d_control.jl.
 
-  .venv/bin/python ns2d_dns.py selfcheck   # Euler invariant conservation
-  .venv/bin/python ns2d_dns.py run         # one forced run  -> ns2d_spectrum.csv
-  .venv/bin/python ns2d_dns.py sweep        # amplitude sweep -> ns2d_sweep.csv
+  .venv/bin/python study/ns2d_dns.py selfcheck   # Euler invariant conservation
+  .venv/bin/python study/ns2d_dns.py run         # one forced run  -> ns2d_spectrum.csv
+  .venv/bin/python study/ns2d_dns.py sweep        # amplitude sweep -> ns2d_sweep.csv
 """
+import os as _os; _os.chdir(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # run from anywhere: paths resolve against the repo root
 import numpy as np, sys, csv
 
 def operators(N):
