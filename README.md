@@ -48,6 +48,7 @@ swift run plankton --3dtest      # 3D fluid incompressibility + stability
 swift run plankton --capturetest # full-state capture round-trips bit-for-bit
 swift run plankton --spectest    # FFT energy-spectrum estimator check
 swift run plankton --vortprobe   # research views stay live (incl. paused)
+swift run plankton --rectest     # mp4 + gif clip encoders write valid files
 
 # headless studies (write CSVs under data/; see docs/spectrum_study.md):
 swift run plankton --sweep       # parameter survey        → data/sweep_results.csv
@@ -69,6 +70,7 @@ agents overlaid. A live, grouped slider panel (top-left) tunes everything.
 - **`r`** — re-roll all brains (or use the **Brain** button).
 - **`c` / `x`** — capture / restore a creature (full state, see below).
 - **`j` / `k`** — record / replay a parameter path.
+- **`v` / `g`** — record an mp4 / animated-GIF clip (toggle; see below).
 - **Save / Load / Reset** buttons — presets (params + brains) to `presets/*.json`.
 - **Diag** toggle — research mode (HUD + plot + field calcs) vs art mode (perf).
 - **`viewMode`** dropdown — dye art / **vorticity** ω / **enstrophy** |ω|² /
@@ -115,6 +117,19 @@ creatures can't be reproduced from a preset alone. The capture system
 
 Works identically in 3D (`captures/creatures3d`, `.fluo3`).
 
+## Recording: video & GIF
+
+Capture motion to a shareable clip (2D and 3D):
+
+- **`v`** — toggle **mp4** recording (H.264, full resolution) → `captures/video/clip_NNN.mp4`.
+- **`g`** — toggle an animated **GIF** (downscaled, longest side 512 px, frame-capped) →
+  `captures/video/clip_NNN.gif`. Best for short loops to drop in chat / issues.
+
+Each frame is blitted off the live drawable and encoded on the GPU's completion
+handler, so recording doesn't stall the render loop. The amber status label
+(bottom-right) shows `● REC …` while recording and the saved filename when you
+stop. Verify the encoders headlessly with `--rectest`.
+
 ## 3D engine (`--3d`)
 
 The whole model promoted to 3D, the owner's `3dMC` idea realized: a 160³
@@ -134,6 +149,7 @@ the `cohesion` knob to grow volumetric creatures. Rendered as a
 - **`[` / `]`** — dim / brighten the volume density.
 - **`c` / `x`** and **`j` / `k`** — capture/restore creatures and
   record/replay paths, same as 2D.
+- **`v` / `g`** — record an mp4 / GIF clip, same as 2D.
 
 ## Spectrum study
 

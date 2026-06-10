@@ -5,6 +5,7 @@ import simd
 // the dye density into a glowing volume through the orbital camera.
 final class Renderer3D: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
+    private let recorder: Recorder             // mp4 / gif clip recording (v / g)
     let sim: Sim3D                              // internal: the 3D panel tunes it
     private let volumePipe: MTLRenderPipelineState
     private let pointPipe: MTLRenderPipelineState
@@ -24,6 +25,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         queue = device.makeCommandQueue()!
+        recorder = Recorder(device: device)
         let lib: MTLLibrary
         do { lib = try device.makeLibrary(source: Shaders3D.source, options: nil) }
         catch { fatalError("MSL3D compile failed: \(error)") }
@@ -49,7 +51,11 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         pd.colorAttachments[0].destinationAlphaBlendFactor = .one
         pointPipe = try! device.makeRenderPipelineState(descriptor: pd)
         super.init()
+        recorder.onStatus = { [weak self] s in self?.onCaptureStatus?(s) }
     }
+
+    func toggleVideo(size: CGSize) { recorder.toggleVideo(size: size) }
+    func toggleGIF(size: CGSize) { recorder.toggleGIF(size: size) }
 
     func reroll() { sim.rerollRule() }
 
@@ -157,6 +163,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         }
         enc.endEncoding()
 
+        recorder.grab(drawable: drawable, commandBuffer: cmd)   // no-op unless recording
         cmd.present(drawable)
         cmd.commit()
     }

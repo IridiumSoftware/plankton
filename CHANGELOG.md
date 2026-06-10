@@ -6,6 +6,11 @@ All notable changes to **plankton** are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **In-app video & GIF recording** (closes #1). `v` records an H.264 mp4 (full
+  resolution, streamed via AVAssetWriter); `g` records a downscaled animated GIF
+  (ImageIO) — both in 2D and 3D, written to `captures/video/`. Frames are blitted
+  off the live drawable and encoded on the GPU completion handler, so recording
+  doesn't stall the render loop. Headless encoder check: `--rectest`.
 - `ROADMAP.md` — possible future directions (richer brains, video/GIF export,
   scale, boundaries/obstacles, sound-reactive, VR) with design principles to
   preserve; linked from the README.

@@ -22,6 +22,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         view = View3D(frame: frame, device: device)
         view.colorPixelFormat = .bgra8Unorm
         view.preferredFramesPerSecond = 60
+        view.framebufferOnly = false        // lets the recorder blit the drawable
         view.autoresizingMask = [.width, .height]
         renderer = Renderer3D(device: device, pixelFormat: view.colorPixelFormat)
         view.delegate = renderer
@@ -77,6 +78,8 @@ final class App3D: NSObject, NSApplicationDelegate {
             case "x": self.renderer.restoreCreature(); self.panel.refresh()
             case "j": self.renderer.recordPathToggle()
             case "k": self.renderer.replayLastPath(); self.panel.refresh()
+            case "v": self.renderer.toggleVideo(size: self.view.drawableSize)
+            case "g": self.renderer.toggleGIF(size: self.view.drawableSize)
             default: break
             }
         }
@@ -90,6 +93,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         [  /  ]      dim / brighten volume
         c / x        capture creature / restore (cycle)
         j / k        record path (toggle) / replay path
+        v / g        record mp4 / gif clip (toggle) → captures/video
         """)
         help.setFrameOrigin(NSPoint(x: 12, y: 12))
         help.autoresizingMask = [.maxXMargin, .maxYMargin]
@@ -118,6 +122,17 @@ final class App3D: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(view)
         print("3D: drag orbit · scroll zoom · r re-roll · [ ] density")
+
+        // Smoke hook for the live 3D record path (no keystrokes needed): with
+        // PLANKTON_AUTOREC set, record ~2.4 s of mp4 then quit. Harmless when unset.
+        if let mode = ProcessInfo.processInfo.environment["PLANKTON_AUTOREC"] {
+            let gif = (mode == "gif")
+            let go: () -> Void = { if gif { self.renderer.toggleGIF(size: self.view.drawableSize) }
+                                   else { self.renderer.toggleVideo(size: self.view.drawableSize) } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: go)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: go)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { NSApp.terminate(nil) }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

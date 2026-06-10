@@ -32,6 +32,10 @@ if CommandLine.arguments.contains("--spectest") {
     runSpecTest()
     exit(0)
 }
+if CommandLine.arguments.contains("--rectest") {
+    runRecTest()
+    exit(0)
+}
 if CommandLine.arguments.contains("--sweep") {
     runSweep()
     exit(0)

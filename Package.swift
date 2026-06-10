@@ -23,6 +23,10 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("Foundation"),
+                .linkedFramework("AVFoundation"),   // mp4 recording (AVAssetWriter)
+                .linkedFramework("CoreMedia"),       // CMTime
+                .linkedFramework("CoreVideo"),       // CVPixelBuffer
+                .linkedFramework("ImageIO"),         // animated-GIF export
             ]
         )
     ]

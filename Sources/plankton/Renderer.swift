@@ -22,6 +22,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var simAcc: Float = 0   // fractional sim-step accumulator (simSpeed)
     private let journal = PathJournal()        // param-trajectory record/replay (capture paths)
     private var creatureLoadIdx = -1           // cycles through captured creatures on restore
+    private let recorder: Recorder             // mp4 / gif clip recording (v / g)
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat, params: Params, mouse: MouseInput) {
         guard let q = device.makeCommandQueue() else {
@@ -37,6 +38,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             fatalError("MSL compile failed: \(error)")
         }
         self.sim = Simulation(device: device, library: library, params: params, mouse: mouse)
+        self.recorder = Recorder(device: device)
 
         let ddesc = MTLRenderPipelineDescriptor()
         ddesc.vertexFunction = library.makeFunction(name: "fs_vertex")
@@ -59,7 +61,12 @@ final class Renderer: NSObject, MTKViewDelegate {
         self.pointsPipe = try! device.makeRenderPipelineState(descriptor: pdesc)
 
         super.init()
+        recorder.onStatus = { [weak self] s in self?.onCaptureStatus?(s) }
     }
+
+    // clip recording (v = mp4, g = gif); size is the view's drawable size
+    func toggleVideo(size: CGSize) { recorder.toggleVideo(size: size) }
+    func toggleGIF(size: CGSize) { recorder.toggleGIF(size: size) }
 
     func reroll() { sim.rerollRule(); spectrum.resetAverage() }
     func reset() { sim.reset(); spectrum.resetAverage() }
@@ -211,6 +218,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
 
         enc.endEncoding()
+        recorder.grab(drawable: drawable, commandBuffer: cmd)   // no-op unless recording
         cmd.present(drawable)
         cmd.commit()
     }

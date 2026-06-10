@@ -13,9 +13,17 @@ numbers. You have to save the **state**, or replay the **path**.*
 | **x** | **restore** — load the captured state back (cycles through your captures on repeat presses); replays the exact creature, bit-for-bit |
 | **j** | **record path** (toggle) — start recording from the current canvas; tune your way to a creature; press **j** again to stop and save `captures/paths/path_NNN.fluopath` |
 | **k** | **replay last path** — restore the recorded start state and re-run the trajectory (applies each parameter change at the frame you made it), re-growing the creature the way you reached it |
+| **v** | **record video** (toggle) — start capturing the live view to `captures/video/clip_NNN.mp4` (H.264, full resolution); press **v** again to stop and finalize |
+| **g** | **record GIF** (toggle) — same, to `captures/video/clip_NNN.gif` (downscaled to ≤512 px, frame-capped); for short shareable loops |
 
 (Existing keys unchanged: `r` re-roll brains, `[ ] - =` keyboard tuning, drag = stir,
 right-click = breed.)
+
+Recording grabs each frame off the live drawable (a GPU blit into a pooled pixel
+buffer) and encodes it in the command buffer's completion handler, so it never
+stalls the render loop. mp4 streams via `AVAssetWriter`; GIF accumulates
+downscaled frames and writes via ImageIO on stop. Works the same in 2D and 3D.
+The encoders are verified headlessly by `--rectest` (the live blit needs a window).
 
 ## Which to use
 
