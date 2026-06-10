@@ -76,7 +76,7 @@ enum Shaders3D {
         if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
         uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
         float3 here = float3(vin[3 * i], vin[3 * i + 1], vin[3 * i + 2]);
-        float3 sv = sampleVel3(vin, float3(gid) + 0.5 - here, d);
+        float3 sv = sampleVel3(vin, float3(gid) - here, d);   // cell i lives AT index i (sampler/splat convention) — a +0.5 here advects the whole field by half a cell per frame
         vout[3 * i] = sv.x; vout[3 * i + 1] = sv.y; vout[3 * i + 2] = sv.z;
     }
 
@@ -129,7 +129,48 @@ enum Shaders3D {
         if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
         uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
         float3 vel = float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
-        dout[i] = sampleScalar3(din, float3(gid) + 0.5 - vel, d) * decay;
+        dout[i] = sampleScalar3(din, float3(gid) - vel, d) * decay;
+    }
+
+    // MacCormack dye advection, passes 2+3 (Selle et al. 2008). Plain semi-
+    // Lagrangian + trilinear (pass 1 above) is first-order DIFFUSIVE — it blurs
+    // the dye a little every frame, smearing creatures into soft blobs. Fix:
+    // advect forward (pass 1, decay=1), advect the result BACKWARD (pass 2: same
+    // kernel form, +vel), and the round-trip error vs the original estimates the
+    // scheme's local truncation error; subtracting half of it (pass 3) cancels
+    // the leading diffusive term ⇒ second-order, visibly sharper structures.
+    kernel void advectDyeBack3d(device const float *din [[buffer(0)]], device float *dout [[buffer(1)]],
+                                device const float *v [[buffer(2)]], constant uint3 &d [[buffer(3)]],
+                                uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        float3 vel = float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+        dout[i] = sampleScalar3(din, float3(gid) + vel, d);
+    }
+
+    // pass 3: corrected = fwd + (orig − back)/2, CLAMPED to the min/max of the 8
+    // source cells the backtrace interpolated from (the standard limiter — the
+    // correction can overshoot and ring; clamping keeps it monotone and the dye
+    // non-negative). Decay is applied here, once.
+    kernel void maccormackDye3d(device const float *orig [[buffer(0)]],
+                                device const float *fwd  [[buffer(1)]],
+                                device float *backAndOut [[buffer(2)]],
+                                device const float *v    [[buffer(3)]],
+                                constant uint3 &d        [[buffer(4)]],
+                                constant float &decay    [[buffer(5)]],
+                                uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
+        uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
+        float3 vel = float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+        float corrected = fwd[i] + 0.5 * (orig[i] - backAndOut[i]);
+        float3 p = float3(gid) - vel;
+        float3 fl = floor(p); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z);
+        float lo = INFINITY, hi = -INFINITY;
+        for (int dz = 0; dz <= 1; dz++) for (int dy = 0; dy <= 1; dy++) for (int dx = 0; dx <= 1; dx++) {
+            float s = orig[idx3(x0 + dx, y0 + dy, z0 + dz, d)];
+            lo = min(lo, s); hi = max(hi, s);
+        }
+        backAndOut[i] = clamp(corrected, lo, hi) * decay;   // own-cell read precedes write — safe
     }
 
     // 3. divergence

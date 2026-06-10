@@ -78,7 +78,7 @@ enum Shaders {
         if (gid.x >= d.x || gid.y >= d.y) return;
         uint i = gid.y * d.x + gid.x;
         float2 here = float2(vin[2 * i], vin[2 * i + 1]);
-        float2 pos = float2(float(gid.x) + 0.5, float(gid.y) + 0.5) - here;
+        float2 pos = float2(gid) - here;   // cell i lives AT index i (sampler/splat convention) — a +0.5 here advects the whole field by half a cell per frame
         float2 sv = sampleVel(vin, pos, d);
         vout[2 * i] = sv.x; vout[2 * i + 1] = sv.y;
     }
@@ -220,7 +220,7 @@ enum Shaders {
         if (gid.x >= d.x || gid.y >= d.y) return;
         uint i = gid.y * d.x + gid.x;
         float2 vel = float2(v[2 * i], v[2 * i + 1]);
-        float2 pos = float2(float(gid.x) + 0.5, float(gid.y) + 0.5) - vel;
+        float2 pos = float2(gid) - vel;
         dout[i] = sampleScalar(din, pos, d) * dyeDecay;
     }
 

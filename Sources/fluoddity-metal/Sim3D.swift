@@ -28,9 +28,11 @@ final class Sim3D {
     private let divg: MTLBuffer
     private(set) var dye: MTLBuffer            // 3D density volume (rendered)
     private var dyeTmp: MTLBuffer
+    private var dyeTmp2: MTLBuffer   // MacCormack backward-advect scratch
 
     private let scalePipe, advectPipe, diffusePipe, splatPipe, divPipe, jacobiPipe,
-                subPipe, movePipe, advectDyePipe: MTLComputePipelineState
+                subPipe, movePipe, advectDyePipe, advectDyeBackPipe,
+                maccormackPipe: MTLComputePipelineState
 
     var velDamp: Float = 0.97        // weak large-scale drag; viscosity does the cascade
     var viscosity: Float = 0.10      // ν∇² scale-selective viscosity — the FAITHFUL fix vs uniform drag
@@ -64,7 +66,7 @@ final class Sim3D {
         }
         vel = zeroed(3 * n3); velTmp = zeroed(3 * n3)
         pressure = zeroed(n3); pressureTmp = zeroed(n3); divg = zeroed(n3)
-        dye = zeroed(n3); dyeTmp = zeroed(n3)
+        dye = zeroed(n3); dyeTmp = zeroed(n3); dyeTmp2 = zeroed(n3)
 
         // particles: random position; velocity = ABC flow (persistent forcing)
         func abc(_ p: SIMD3<Float>) -> SIMD3<Float> {
@@ -98,6 +100,8 @@ final class Sim3D {
         divPipe = pipe("divergence3d"); jacobiPipe = pipe("jacobi3d")
         subPipe = pipe("subgrad3d"); movePipe = pipe("move3d")
         advectDyePipe = pipe("advectDye3d")
+        advectDyeBackPipe = pipe("advectDyeBack3d")
+        maccormackPipe = pipe("maccormackDye3d")
     }
 
     func encode(into cmd: MTLCommandBuffer) {
@@ -156,15 +160,32 @@ final class Sim3D {
             e.setBytes(&dimv, length: 16, index: 2)
         }
         swap(&vel, &velTmp)
+        // MacCormack dye advection (3 passes — see Shaders3D): forward into dyeTmp,
+        // backward into dyeTmp2, then correct+clamp+decay in place in dyeTmp2.
         var dyeDecayv = dyeDecay
+        var noDecay: Float = 1.0
         field(cmd, advectDyePipe) { e in
             e.setBuffer(self.dye, offset: 0, index: 0)
             e.setBuffer(self.dyeTmp, offset: 0, index: 1)
             e.setBuffer(self.vel, offset: 0, index: 2)
             e.setBytes(&dimv, length: 16, index: 3)
-            e.setBytes(&dyeDecayv, length: 4, index: 4)
+            e.setBytes(&noDecay, length: 4, index: 4)
         }
-        swap(&dye, &dyeTmp)
+        field(cmd, advectDyeBackPipe) { e in
+            e.setBuffer(self.dyeTmp, offset: 0, index: 0)
+            e.setBuffer(self.dyeTmp2, offset: 0, index: 1)
+            e.setBuffer(self.vel, offset: 0, index: 2)
+            e.setBytes(&dimv, length: 16, index: 3)
+        }
+        field(cmd, maccormackPipe) { e in
+            e.setBuffer(self.dye, offset: 0, index: 0)
+            e.setBuffer(self.dyeTmp, offset: 0, index: 1)
+            e.setBuffer(self.dyeTmp2, offset: 0, index: 2)
+            e.setBuffer(self.vel, offset: 0, index: 3)
+            e.setBytes(&dimv, length: 16, index: 4)
+            e.setBytes(&dyeDecayv, length: 4, index: 5)
+        }
+        swap(&dye, &dyeTmp2)
         frame &+= 1
         var framev = frame
         var mp = MoveParams3GPU(swim: swim, sensorDist: sensorDist, sensorAngle: sensorAngle,
