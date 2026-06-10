@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Collapse test for the fluoddity-metal spectrum study.
+Collapse test for the plankton spectrum study.
 
   python3 analyze_collapse.py            # OAT survey   (sweep_results.csv, 44 sparse pts)
   python3 analyze_collapse.py map        # 2D map       (map_results.csv, 36 joint cells)

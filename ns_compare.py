@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare the real 2D NS DNS (ns2d_dns.py) to the fluoddity-metal engine.
+Compare the real 2D NS DNS (ns2d_dns.py) to the plankton engine.
 Two contrasts (fig8):
   (L) spectral shape: DNS E(k) vs a representative fluoddity E(k), with -5/3 / -3 refs.
   (R) UNIVERSALITY: inertial slope vs forcing amplitude. Real 2D NS = flat

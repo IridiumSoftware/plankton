@@ -1,12 +1,12 @@
 import AppKit
 
 // ───────────────────────────────────────────────────────────────────────────
-// fluoddity-metal — entry point.
+// plankton — entry point.
 //
-//   swift run fluoddity-metal             → opens the Metal window (the engine)
-//   swift run fluoddity-metal --simtest   → headless: run the compute pipeline,
+//   swift run plankton             → opens the Metal window (the engine)
+//   swift run plankton --simtest   → headless: run the compute pipeline,
 //                                           verify the field (no window)
-//   swift run fluoddity-metal --smoke     → headless atomic_float toolchain test
+//   swift run plankton --smoke     → headless atomic_float toolchain test
 //
 // The windowed path needs a GUI session. The --simtest / --smoke paths are
 // headless and are what a remote agent / CI runs to verify the engine.
@@ -75,14 +75,14 @@ let mainMenu = NSMenu()
 let appMenuItem = NSMenuItem()
 mainMenu.addItem(appMenuItem)
 let appMenu = NSMenu()
-appMenu.addItem(withTitle: "About fluoddity-metal",
+appMenu.addItem(withTitle: "About plankton",
                 action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                 keyEquivalent: "")
 appMenu.addItem(.separator())
-appMenu.addItem(withTitle: "Hide fluoddity-metal",
+appMenu.addItem(withTitle: "Hide plankton",
                 action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
 appMenu.addItem(.separator())
-appMenu.addItem(withTitle: "Quit fluoddity-metal",
+appMenu.addItem(withTitle: "Quit plankton",
                 action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 appMenuItem.submenu = appMenu
 let windowMenuItem = NSMenuItem()

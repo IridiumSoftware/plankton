@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Minimal forced 2D Navier-Stokes pseudospectral DNS (vorticity form) — the REAL
-cascade, as a calibration reference for the fluoddity-metal engine's spectrum.
+cascade, as a calibration reference for the plankton engine's spectrum.
 
   omega_t + J(psi,omega) = nu*Lap(omega) - mu*omega + f
   u = d psi/dy,  v = -d psi/dx,  omega = -Lap(psi)  =>  psi_hat = omega_hat / k^2

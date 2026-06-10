@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Figures + collapse fit for the fluoddity-metal spectrum study.
+Figures + collapse fit for the plankton spectrum study.
 Reads map_results.csv (2D forceGain×velDamp grid) and sweep_results.csv (OAT).
 Writes figures/*.png. Run with the project venv: .venv/bin/python make_figures.py
 """

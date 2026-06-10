@@ -112,7 +112,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered, defer: false)
-        window.title = "fluoddity-metal — 3D"
+        window.title = "plankton — 3D"
         window.contentView = container
         window.center()
         window.makeKeyAndOrderFront(nil)

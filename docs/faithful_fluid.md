@@ -50,8 +50,8 @@ Already present and kept: **chemotaxis** (`cohesion`, the AT-5 ingredient) and
 ## Watch / tune
 
 ```
-swift run fluoddity-metal              # windowed — watch the creatures
-swift run fluoddity-metal --simtest    # headless: faithful pipeline stable + projected (PASS)
+swift run plankton              # windowed — watch the creatures
+swift run plankton --simtest    # headless: faithful pipeline stable + projected (PASS)
 ```
 
 Live knobs for the faithful feel: **`viscosity`** sets the small-scale dissipation

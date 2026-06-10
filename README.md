@@ -1,4 +1,4 @@
-# fluoddity-metal
+# plankton
 
 A Metal-native flow-field art engine and soft fluid-dynamics visualizer for
 Apple Silicon — a fork of [Fluoddity](https://github.com/aphid91/Fluoddity) (by
@@ -38,24 +38,24 @@ Requires macOS on Apple Silicon, the Swift toolchain (**Command Line Tools is
 enough — no full Xcode**), and Metal. Shaders are compiled at runtime.
 
 ```sh
-swift run fluoddity-metal               # 2D engine (the main app)
-swift run fluoddity-metal --3d          # 3D engine (orbital, volumetric)
+swift run plankton               # 2D engine (the main app)
+swift run plankton --3d          # 3D engine (orbital, volumetric)
 
 # headless verification (no window — runs the compute path + checks):
-swift run fluoddity-metal --smoke       # toolchain / atomic_float
-swift run fluoddity-metal --simtest     # 2D fluid incompressibility + stability
-swift run fluoddity-metal --3dtest      # 3D fluid incompressibility + stability
-swift run fluoddity-metal --capturetest # full-state capture round-trips bit-for-bit
-swift run fluoddity-metal --spectest    # FFT energy-spectrum estimator check
-swift run fluoddity-metal --vortprobe   # research views stay live (incl. paused)
+swift run plankton --smoke       # toolchain / atomic_float
+swift run plankton --simtest     # 2D fluid incompressibility + stability
+swift run plankton --3dtest      # 3D fluid incompressibility + stability
+swift run plankton --capturetest # full-state capture round-trips bit-for-bit
+swift run plankton --spectest    # FFT energy-spectrum estimator check
+swift run plankton --vortprobe   # research views stay live (incl. paused)
 
 # headless studies (write CSVs; see docs/spectrum_study.md):
-swift run fluoddity-metal --sweep       # parameter survey        → sweep_results.csv
-swift run fluoddity-metal --map         # drive×dissipation map   → map_results.csv
-swift run fluoddity-metal --map3        # 3-param map (+sensors)  → map3_results.csv
-swift run fluoddity-metal --sdscan      # sensorDist scan         → sdscan_*.csv
-swift run fluoddity-metal --bistab      # bistability probe       → bistab_results.csv
-swift run fluoddity-metal --3dspec      # 3D engine spectrum      → 3dspec_manifest.csv
+swift run plankton --sweep       # parameter survey        → sweep_results.csv
+swift run plankton --map         # drive×dissipation map   → map_results.csv
+swift run plankton --map3        # 3-param map (+sensors)  → map3_results.csv
+swift run plankton --sdscan      # sensorDist scan         → sdscan_*.csv
+swift run plankton --bistab      # bistability probe       → bistab_results.csv
+swift run plankton --3dspec      # 3D engine spectrum      → 3dspec_manifest.csv
 ```
 
 ## 2D engine

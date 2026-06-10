@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered,
                           defer: false)
-        window.title = "fluoddity-metal"
+        window.title = "plankton"
         window.contentView = container
         window.center()
         window.makeKeyAndOrderFront(nil)

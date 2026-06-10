@@ -4,7 +4,7 @@
 
 ## Summary
 
-fluoddity-metal forces a real incompressible 2D fluid (Stable-Fluids: advect →
+plankton forces a real incompressible 2D fluid (Stable-Fluids: advect →
 Hodge/Leray project) with ~10⁶ agents driven by a symmetric Fourier brain. We
 measured the time-averaged radial energy spectrum E(k) over the parameter space
 and asked whether it shows a Kolmogorov-style inertial cascade.
@@ -237,7 +237,7 @@ Re grows (more forcing → wider inertial range): the drift is a finite-Re *fitt
 effect, and the slope stays **pinned in the steep enstrophy band, never shallower
 than −3.3.**
 
-**The contrast with the toy** (Fig. 8, right): the fluoddity slope dials from
+**The contrast with the toy** (Fig. 8, right): the original-engine slope dials from
 −3.1 down to **−1.4** — reaching far shallower than *any* real 2D NS enstrophy
 cascade. Both drift with forcing (both change Re), but the DNS sits in the
 enstrophy band converging to −3, while the engine accesses a **shallow-spectrum
@@ -317,12 +317,12 @@ range.)
 ## 4. Reproduce
 
 ```
-swift run fluoddity-metal --spectest      # FFT estimator control check (peak at k=8)
-swift run fluoddity-metal --sweep         # OAT survey      → sweep_results.csv
-swift run fluoddity-metal --map           # 2D drive×damp   → map_results.csv
-swift run fluoddity-metal --map3          # 3-axis +sensorDist → map3_results.csv
-swift run fluoddity-metal --sdscan        # fine sensorDist sweep → sdscan_{summary,spectra}.csv
-swift run fluoddity-metal --bistab        # multistability probe → bistab_results.csv
+swift run plankton --spectest      # FFT estimator control check (peak at k=8)
+swift run plankton --sweep         # OAT survey      → sweep_results.csv
+swift run plankton --map           # 2D drive×damp   → map_results.csv
+swift run plankton --map3          # 3-axis +sensorDist → map3_results.csv
+swift run plankton --sdscan        # fine sensorDist sweep → sdscan_{summary,spectra}.csv
+swift run plankton --bistab        # multistability probe → bistab_results.csv
 .venv/bin/python analyze_collapse.py map  # collapse test (dense) → collapse_table_map.csv
 .venv/bin/python analyze_collapse.py map3 # 3-group test    → collapse_table_map3.csv
 .venv/bin/python make_figures.py          # figures 1-4 + the 2- & 3-group fits
@@ -332,7 +332,7 @@ swift run fluoddity-metal --bistab        # multistability probe → bistab_resu
 .venv/bin/python ns2d_dns.py sweep        # DNS forcing-amplitude sweep → ns2d_sweep.csv
 .venv/bin/python ns2d_dns.py run          # one DNS run → ns2d_spectrum.csv
 .venv/bin/python ns_compare.py            # figure 8: DNS vs the engine
-swift run fluoddity-metal --3dspec        # 128³ 3D forcing sweep → vel3d_*.bin + manifest
+swift run plankton --3dspec        # 128³ 3D forcing sweep → vel3d_*.bin + manifest
 .venv/bin/python analyze_3dspec.py        # figure 9: 3D energy spectrum (numpy 3D FFT)
 ```
 
