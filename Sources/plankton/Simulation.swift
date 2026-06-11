@@ -351,6 +351,12 @@ final class Simulation {
         var particles = Simulation.seedParticles(count: particleCount)
         memcpy(particleBuffer.contents(), &particles,
                MemoryLayout<Particle>.stride * particleCount)
+        // restore the even 8-cohort partition (ecology may have scrambled membership)
+        var coh = Simulation.partitionCohorts(count: particleCount)
+        memcpy(cohortBuffer.contents(), &coh, particleCount * MemoryLayout<UInt32>.stride)
+        recountCohorts()
+        ecology.p = [Double](repeating: 1.0 / Double(Simulation.nCohorts), count: Simulation.nCohorts)
+        ecoFrame = 0; ecoSteps = 0; reallocCursor = 0
         print("reset")
     }
 
