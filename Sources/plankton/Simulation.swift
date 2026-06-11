@@ -245,17 +245,30 @@ final class Simulation {
     var ecology = Ecology()
     var ecologyOn = false
     private var ecoFrame = 0
-    private let ecoEvery = 8          // step the replicator every N rendered frames
+    private let ecoEvery = 8           // step the replicator every N rendered frames
     private let ecoDt = 0.05
+    // tracked cohort counts so reallocation never re-scans all N to recount; a
+    // bounded scan per step keeps the main thread cheap (the recount was the
+    // O(N)-every-step cost that made ecology mode janky live).
+    private var cohortCounts = [Int](repeating: 0, count: Simulation.nCohorts)
+    private var reallocCursor = 0
+    private var ecoSteps = 0
+
+    // full recount of cohortCounts from the buffer (one O(N) pass — used on enable
+    // and periodically to correct any drift from external edits).
+    private func recountCohorts() {
+        let coh = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: particleCount)
+        var cur = [Int](repeating: 0, count: Simulation.nCohorts)
+        for i in 0..<particleCount { cur[Int(coh[i])] += 1 }
+        cohortCounts = cur
+    }
 
     // sync the ecology's frequencies from the current agent counts (call on enable)
     func syncEcologyFromAgents() {
-        let coh = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: particleCount)
-        var cur = [Double](repeating: 0, count: Simulation.nCohorts)
-        for i in 0..<particleCount { cur[Int(coh[i])] += 1 }
-        let s = cur.reduce(0, +)
-        ecology.p = s > 0 ? cur.map { $0 / s } : ecology.p
-        ecoFrame = 0
+        recountCohorts()
+        let s = Double(particleCount)
+        ecology.p = s > 0 ? cohortCounts.map { Double($0) / s } : ecology.p
+        ecoFrame = 0; ecoSteps = 0; reallocCursor = 0
     }
 
     func setEcologyPreset(_ preset: Ecology.Preset) { ecology.A = Ecology.matrix(preset) }
@@ -267,6 +280,8 @@ final class Simulation {
         guard ecoFrame % ecoEvery == 0 else { return }
         ecology.step(dt: ecoDt)
         ecology.reseedExtinct { dead, leader in self.mutateRuleBlock(dead, from: leader) }
+        ecoSteps += 1
+        if ecoSteps % 256 == 0 { recountCohorts() }      // rare drift correction (counts are exact during normal play)
         reallocateCohorts(to: ecology.p)
     }
 
@@ -278,26 +293,36 @@ final class Simulation {
         for k in 0..<80 { rf[dead * 80 + k] = rf[leader * 80 + k] + Float.random(in: -m...m, using: &rng) }
     }
 
-    // relabel agents so cohort counts match round(p_i · N), in one O(N) pass.
+    // Relabel agents toward round(p_i · N) using TRACKED counts and a BOUNDED scan
+    // (a persistent cursor sweeps the buffer across steps). Per step touches at most
+    // `scanBudget` agents, so the cost is O(scanBudget), not O(N); membership lags p
+    // by a few steps, which is invisible since p moves slowly.
     private func reallocateCohorts(to p: [Double]) {
         let n = Simulation.nCohorts, N = particleCount
-        let c = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
-        var cur = [Int](repeating: 0, count: n)
-        for i in 0..<N { cur[Int(c[i])] += 1 }
         var tgt = p.map { Int(($0 * Double(N)).rounded()) }
         var drift = N - tgt.reduce(0, +)                 // fix rounding so Σtgt == N
         var k = 0
         while drift != 0 { let s = drift > 0 ? 1 : -1; if tgt[k % n] + s >= 0 { tgt[k % n] += s; drift -= s }; k += 1 }
-        var need = (0..<n).map { tgt[$0] - cur[$0] }     // >0 wants more, <0 has surplus
-        var recv = 0
-        for i in 0..<N {
+        var need = (0..<n).map { tgt[$0] - cohortCounts[$0] }     // >0 wants more, <0 surplus
+        var recvNeed = need.reduce(0) { $0 + max(0, $1) }
+        if recvNeed == 0 { return }
+
+        let c = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
+        let scanBudget = 60_000                          // ~1/17 of N → full sweep over ~17 steps
+        var i = reallocCursor, scanned = 0, recv = 0
+        while scanned < scanBudget && recvNeed > 0 {
             let old = Int(c[i])
-            if need[old] < 0 {                            // surplus cohort → move this agent
+            if need[old] < 0 {                            // this agent's cohort has a surplus → move it
                 while recv < n && need[recv] <= 0 { recv += 1 }
                 if recv >= n { break }
-                c[i] = UInt32(recv); need[old] += 1; need[recv] -= 1
+                c[i] = UInt32(recv)
+                cohortCounts[old] -= 1; cohortCounts[recv] += 1
+                need[old] += 1; need[recv] -= 1; recvNeed -= 1
             }
+            i += 1; if i >= N { i = 0 }
+            scanned += 1
         }
+        reallocCursor = i
     }
 
     // Particles seeded into per-cohort tiles (so the sub-populations start
