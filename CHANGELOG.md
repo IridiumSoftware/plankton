@@ -6,6 +6,13 @@ All notable changes to **plankton** are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Morphology atlas** (`--morphology`) — maps the dye-structure regimes
+  (foam / network / spots / dispersed) across cohesion × dyeDecay, classifying
+  each cell by contrast + Euler characteristic + largest-connected-component
+  fraction (descriptors verified by `--morphtest`). Renders a montage of the
+  actual structures (`study/morphology_atlas.py`). Finding: chemotaxis makes
+  aggregate structure robust across the plane, while *closed-cell foam* is a
+  narrow low-cohesion/low-dyeDecay band. See `docs/morphology.md`.
 - **Ecology mode** (`e`) — replicator-mutator dynamics over the 8 cohorts:
   they become game-theory strategies whose frequencies evolve by the replicator
   equation under a payoff matrix (RPS / coexistence / dominance presets), with

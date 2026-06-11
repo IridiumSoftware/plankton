@@ -44,6 +44,18 @@ if CommandLine.arguments.contains("--ecologysim") {
     runEcologySimTest()
     exit(0)
 }
+if CommandLine.arguments.contains("--morphtest") {
+    runMorphTest()
+    exit(0)
+}
+if CommandLine.arguments.contains("--morphology") {
+    runMorphology()
+    exit(0)
+}
+if CommandLine.arguments.contains("--morphdump") {
+    runMorphDump()
+    exit(0)
+}
 if CommandLine.arguments.contains("--sweep") {
     runSweep()
     exit(0)

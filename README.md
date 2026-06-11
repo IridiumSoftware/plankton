@@ -51,8 +51,10 @@ swift run plankton --vortprobe   # research views stay live (incl. paused)
 swift run plankton --rectest     # mp4 + gif clip encoders write valid files
 swift run plankton --ecologytest # replicator-mutator dynamics core (RPS/ESS/…)
 swift run plankton --ecologysim  # ecology reallocation tracks p in-engine
+swift run plankton --morphtest   # morphology descriptors classify known patterns
 
 # headless studies (write CSVs under data/; see docs/spectrum_study.md):
+swift run plankton --morphology  # structure regime map → data/morphology.csv (see docs/morphology.md)
 swift run plankton --sweep       # parameter survey        → data/sweep_results.csv
 swift run plankton --map         # drive×dissipation map   → data/map_results.csv
 swift run plankton --map3        # 3-param map (+sensors)  → data/map3_results.csv
