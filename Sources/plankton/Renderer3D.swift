@@ -22,6 +22,13 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     private let journal = PathJournal()
     private var creatureLoadIdx = -1
     private var simAcc: Float = 0   // fractional sim-step accumulator (simSpeed)
+    private var lastCommand: MTLCommandBuffer?   // for GPU sync before CPU reads/writes
+
+    // Block until the in-flight frame's GPU work is done, so capture/breed/restore
+    // read/write the shared buffers consistently (they're triggered off the render
+    // loop and would otherwise race the move/splat kernels → torn snapshots). All
+    // on the main thread + a rare user action, so a one-frame stall is fine.
+    private func syncGPU() { lastCommand?.waitUntilCompleted() }
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
         queue = device.makeCommandQueue()!
@@ -62,6 +69,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     // right-click breed: unproject the click into a world ray (same math as the
     // ray-march fragment), vote + mutate in Sim3D
     func breed(at uv: SIMD2<Float>) {
+        syncGPU()
         let invVP = camera.invViewProj()
         let ndc = uv * 2 - SIMD2<Float>(1, 1)
         let nh = invVP * SIMD4<Float>(ndc.x, ndc.y, 0, 1)
@@ -78,6 +86,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
 
     // ── capture creatures (full state) + paths (parameter trajectory), 3D ──
     func captureCreature() {                                   // c
+        syncGPU()
         let url = Captures.nextURL("creatures3d", "creature3d", "fluo3")
         do {
             try sim.serializeState(paramRead()).write(to: url)
@@ -86,6 +95,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         } catch { onCaptureStatus?("capture failed") }
     }
     func restoreCreature() {                                   // x — cycles through captures
+        syncGPU()
         let files = Captures.list("creatures3d", "fluo3")
         guard !files.isEmpty else { onCaptureStatus?("no creatures yet — press c"); return }
         creatureLoadIdx = (creatureLoadIdx + 1) % files.count
@@ -98,12 +108,14 @@ final class Renderer3D: NSObject, MTKViewDelegate {
             let url = journal.stopRecordingAndSave("paths3d", "path3d", "fluo3path")
             onCaptureStatus?("■ saved \(url?.deletingPathExtension().lastPathComponent ?? "path")")
         } else {
+            syncGPU()
             journal.startRecording(startState: sim.serializeState(paramRead()), read: paramRead)
             onCaptureStatus?("● REC path — tune, then press j to save")
         }
     }
     func replayLastPath() {                                    // k
         guard let url = Captures.list("paths3d", "fluo3path").last else { onCaptureStatus?("no paths yet — press j"); return }
+        syncGPU()
         if let start = journal.beginReplay(url), let p = sim.applyState(start) {
             for (i, v) in p.enumerated() { paramWrite(i, v) }
             onCaptureStatus?("▶ replaying \(url.deletingPathExtension().lastPathComponent)")
@@ -166,5 +178,6 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         recorder.grab(drawable: drawable, commandBuffer: cmd)   // no-op unless recording
         cmd.present(drawable)
         cmd.commit()
+        lastCommand = cmd   // capture/breed wait on this before touching shared buffers
     }
 }

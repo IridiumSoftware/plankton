@@ -103,8 +103,11 @@ final class Simulation {
         vortPipe      = pipe("vorticity")
     }
 
+    var gpuSync: (() -> Void)?   // set by the renderer: wait for the in-flight frame
+
     func encode(into cmd: MTLCommandBuffer) {
         if mouse.breedRequested {
+            gpuSync?()                 // breedAt reads particle positions on the CPU — don't race the kernels
             breedAt(mouse.breedPos)
             mouse.breedRequested = false
         }

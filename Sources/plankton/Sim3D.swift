@@ -108,8 +108,6 @@ final class Sim3D {
     }
 
     func encode(into cmd: MTLCommandBuffer) {
-        let fieldDim = Int(dim.x)
-        let n3 = fieldDim * fieldDim * fieldDim
         var dimv = dim, velDampv = velDamp, forceGainv = forceGain
         var viscv = min(viscosity, 0.16)   // clamp below the 3D explicit-diffusion stability limit (1/6)
 
@@ -118,20 +116,17 @@ final class Sim3D {
             e.setBuffer(self.velTmp, offset: 0, index: 1)
             e.setBytes(&dimv, length: 16, index: 2)
         }
-        // viscous diffusion ν∇² (the FAITHFUL fix vs uniform drag): velTmp → vel
-        // scratch, then swap so velTmp holds the diffused field (vel is restored by
-        // the post-projection swap below).
+        // viscous diffusion ν∇² FUSED with the large-scale drag (velDamp): velTmp →
+        // vel, then swap so velTmp holds the diffused+damped field. The old separate
+        // scale3d damping pass is gone — one fewer full velocity read+write per step.
         field(cmd, diffusePipe) { e in
             e.setBuffer(self.velTmp, offset: 0, index: 0)
             e.setBuffer(self.vel, offset: 0, index: 1)
             e.setBytes(&dimv, length: 16, index: 2)
             e.setBytes(&viscv, length: 4, index: 3)
+            e.setBytes(&velDampv, length: 4, index: 4)
         }
         swap(&vel, &velTmp)
-        elementwise(cmd, scalePipe, 3 * n3) { e in
-            e.setBuffer(self.velTmp, offset: 0, index: 0)
-            e.setBytes(&velDampv, length: 4, index: 1)
-        }
         var dyeAmtv = dyeAmount
         var dipoleLenv = dipoleLen
         particles(cmd, splatPipe) { e in

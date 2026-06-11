@@ -61,8 +61,12 @@ enum Shaders3D {
     // fluoddity's uniform drag. Real viscosity is k²-SELECTIVE (kills small scales,
     // spares large ⇒ an inertial range / cascade); uniform drag damped every mode
     // equally ⇒ no cascade. Stable for visc ≤ 1/6 (3D explicit-diffusion limit).
+    // FUSED with the large-scale drag: writes (c + visc·∇²v)·velDamp, so the
+    // separate scale3d damping pass is gone (one fewer full read+write of the
+    // velocity field per step — the dominant bandwidth cost at 160³).
     kernel void diffuse3d(device const float *vin [[buffer(0)]], device float *vout [[buffer(1)]],
                           constant uint3 &d [[buffer(2)]], constant float &visc [[buffer(3)]],
+                          constant float &velDamp [[buffer(4)]],
                           uint3 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
         int x = int(gid.x), y = int(gid.y), z = int(gid.z);
@@ -71,7 +75,7 @@ enum Shaders3D {
         float3 lap = vat(vin, x-1,y,z, d) + vat(vin, x+1,y,z, d)
                    + vat(vin, x,y-1,z, d) + vat(vin, x,y+1,z, d)
                    + vat(vin, x,y,z-1, d) + vat(vin, x,y,z+1, d) - 6.0 * c;
-        float3 o = c + visc * lap;
+        float3 o = (c + visc * lap) * velDamp;
         vout[3*i] = o.x; vout[3*i+1] = o.y; vout[3*i+2] = o.z;
     }
 
