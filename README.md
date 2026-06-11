@@ -124,8 +124,8 @@ Works identically in 3D (`captures/creatures3d`, `.fluo3`).
 
 ## Ecology mode (replicator dynamics)
 
-Press **`e`** to treat the 8 cohorts as competing **strategies** in an
-evolutionary game. Their frequencies `pᵢ` (how much of the population runs brain
+Press **`e`** (in either the 2D or 3D engine) to treat the 8 cohorts as competing
+**strategies** in an evolutionary game. Their frequencies `pᵢ` (how much of the population runs brain
 `i`) evolve by the **replicator equation** `ṗᵢ = pᵢ(πᵢ − π̄)` — higher-than-average
 payoff strategies grow, lower ones shrink — and agents are relabelled each step so
 the cohort colours (raise `pointAlpha`) show the live mix. Extinct strategies are
@@ -176,6 +176,8 @@ the `cohesion` knob to grow volumetric creatures. Rendered as a
 - **`c` / `x`** and **`j` / `k`** — capture/restore creatures and
   record/replay paths, same as 2D.
 - **`v` / `g`** — record an mp4 / GIF clip, same as 2D.
+- **`e`** — cycle **ecology mode** (off → RPS → coexistence → dominance), same as
+  2D — the strategy mix ripples through the volume (raise `pointAlpha` to see it).
 
 ## Spectrum study
 

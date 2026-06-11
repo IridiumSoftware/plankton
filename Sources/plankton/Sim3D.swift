@@ -21,6 +21,7 @@ final class Sim3D {
     let count: Int
     let dim: SIMD3<UInt32>
     let particleBuffer: MTLBuffer
+    let cohortBuffer: MTLBuffer        // uint per agent: which cohort/strategy it runs
     let ruleBuffer: MTLBuffer          // nCohorts × 20 float4 (one 80-param brain per cohort)
     private(set) var vel: MTLBuffer
     private var velTmp: MTLBuffer
@@ -88,6 +89,12 @@ final class Sim3D {
         particleBuffer = device.makeBuffer(bytes: &parts,
                                            length: MemoryLayout<Particle3D>.stride * count,
                                            options: .storageModeShared)!
+
+        // per-agent cohort index (was a fixed index partition; now explicit so
+        // ecology mode can reassign membership). Seeded to the same partition.
+        var coh = Sim3D.partitionCohorts(count: count)
+        cohortBuffer = device.makeBuffer(bytes: &coh, length: MemoryLayout<UInt32>.stride * count,
+                                         options: .storageModeShared)!
 
         var rule = Sim3D.randomRule()
         ruleBuffer = device.makeBuffer(bytes: &rule,
@@ -199,7 +206,13 @@ final class Sim3D {
             e.setBytes(&framev, length: 4, index: 5)
             e.setBuffer(self.dye, offset: 0, index: 6)
             e.setBytes(&countv, length: 4, index: 7)
+            e.setBuffer(self.cohortBuffer, offset: 0, index: 8)
         }
+    }
+
+    // the fixed index-partition cohort assignment (default / pre-ecology layout)
+    static func partitionCohorts(count: Int) -> [UInt32] {
+        (0..<count).map { UInt32(($0 * nCohorts) / count) }
     }
 
     // 8 sub-populations, each with its own 80-param brain (mirrors the 2D engine)
@@ -231,6 +244,7 @@ final class Sim3D {
     func breedAt(rayOrigin ro: SIMD3<Float>, rayDir rd: SIMD3<Float>) {
         let nc = Sim3D.nCohorts
         let p = particleBuffer.contents().bindMemory(to: Particle3D.self, capacity: count)
+        let coh = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: count)
         var votes = [Int](repeating: 0, count: nc)
         let radius2: Float = 0.08 * 0.08
         let stepN = max(1, count / 200_000)   // subsample for speed
@@ -241,7 +255,7 @@ final class Sim3D {
             let t = simd_dot(w, rd)
             if t > 0 {
                 let perp = w - rd * t
-                if simd_length_squared(perp) < radius2 { votes[(i * nc) / count] += 1 }
+                if simd_length_squared(perp) < radius2 { votes[Int(coh[i])] += 1 }   // vote by actual cohort
             }
             i += stepN
         }
@@ -261,13 +275,88 @@ final class Sim3D {
         print("3D bred from cohort \(parent) (\(votes[parent]) votes)")
     }
 
+    // ── ecology mode (replicator-mutator over the 8 cohort strategies) ──────
+    // Mirrors the 2D Simulation: cohort frequencies evolve by the replicator
+    // equation under a well-mixed payoff π = A·p; agents are relabelled each step
+    // so the cohort colours track p; extinct strategies reseed from the leader.
+    var ecology = Ecology()
+    var ecologyOn = false
+    private var ecoFrame = 0
+    private let ecoEvery = 8
+    private let ecoDt = 0.05
+    private var cohortCounts = [Int](repeating: 0, count: Sim3D.nCohorts)
+    private var reallocCursor = 0
+    private var ecoSteps = 0
+
+    private func recountCohorts() {
+        let c = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: count)
+        var cur = [Int](repeating: 0, count: Sim3D.nCohorts)
+        for i in 0..<count { cur[Int(c[i])] += 1 }
+        cohortCounts = cur
+    }
+
+    func syncEcologyFromAgents() {
+        recountCohorts()
+        let s = Double(count)
+        ecology.p = s > 0 ? cohortCounts.map { Double($0) / s } : ecology.p
+        ecoFrame = 0; ecoSteps = 0; reallocCursor = 0
+    }
+
+    func setEcologyPreset(_ preset: Ecology.Preset) { ecology.A = Ecology.matrix(preset) }
+
+    func stepEcology() {
+        guard ecologyOn else { return }
+        ecoFrame += 1
+        guard ecoFrame % ecoEvery == 0 else { return }
+        ecology.step(dt: ecoDt)
+        ecology.reseedExtinct { dead, leader in self.mutateRuleBlock(dead, from: leader) }
+        ecoSteps += 1
+        if ecoSteps % 256 == 0 { recountCohorts() }
+        reallocateCohorts(to: ecology.p)
+    }
+
+    private func mutateRuleBlock(_ dead: Int, from leader: Int) {
+        let rf = ruleBuffer.contents().bindMemory(to: Float.self, capacity: Sim3D.nCohorts * 80)
+        var rng = SystemRandomNumberGenerator()
+        let m = max(0.05, mutationStrength)
+        for k in 0..<80 { rf[dead * 80 + k] = rf[leader * 80 + k] + Float.random(in: -m...m, using: &rng) }
+    }
+
+    // bounded incremental relabel toward round(p_i·N) — same cheap scan as 2D
+    private func reallocateCohorts(to p: [Double]) {
+        let n = Sim3D.nCohorts, N = count
+        var tgt = p.map { Int(($0 * Double(N)).rounded()) }
+        var drift = N - tgt.reduce(0, +)
+        var k = 0
+        while drift != 0 { let s = drift > 0 ? 1 : -1; if tgt[k % n] + s >= 0 { tgt[k % n] += s; drift -= s }; k += 1 }
+        var need = (0..<n).map { tgt[$0] - cohortCounts[$0] }
+        var recvNeed = need.reduce(0) { $0 + max(0, $1) }
+        if recvNeed == 0 { return }
+        let c = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
+        let scanBudget = 60_000
+        var i = reallocCursor, scanned = 0, recv = 0
+        while scanned < scanBudget && recvNeed > 0 {
+            let old = Int(c[i])
+            if need[old] < 0 {
+                while recv < n && need[recv] <= 0 { recv += 1 }
+                if recv >= n { break }
+                c[i] = UInt32(recv)
+                cohortCounts[old] -= 1; cohortCounts[recv] += 1
+                need[old] += 1; need[recv] -= 1; recvNeed -= 1
+            }
+            i += 1; if i >= N { i = 0 }
+            scanned += 1
+        }
+        reallocCursor = i
+    }
+
     // ── full-state capture: vel + dye + particles + brain + the param values (extra) ──
     func serializeState(_ extra: [Float]) -> Data {
         var data = Data()
         func putI(_ v: Int32) { var x = v; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
-        putI(0x464C5533); putI(2)                                  // magic "FLU3", version (2 = 8-cohort rule)
+        putI(0x464C5533); putI(3)                                  // magic "FLU3", version (3 = + per-agent cohorts)
         putI(Int32(dim.x)); putI(Int32(count))
-        for b in [vel, dye, particleBuffer, ruleBuffer] { data.append(Data(bytes: b.contents(), count: b.length)) }
+        for b in [vel, dye, particleBuffer, ruleBuffer, cohortBuffer] { data.append(Data(bytes: b.contents(), count: b.length)) }
         putI(Int32(extra.count))
         for v in extra { var vv = v; withUnsafeBytes(of: &vv) { data.append(contentsOf: $0) } }
         return data
@@ -299,6 +388,14 @@ final class Sim3D {
                 }
                 off += single
             }
+            if version >= 3 {
+                memcpy(cohortBuffer.contents(), raw.baseAddress!.advanced(by: off), cohortBuffer.length)
+                off += cohortBuffer.length
+            } else {
+                var coh = Sim3D.partitionCohorts(count: count)   // pre-v3: rebuild the partition
+                memcpy(cohortBuffer.contents(), &coh, count * 4)
+            }
+            recountCohorts()
             let np = Int(i32()); var p = [Float]()
             for _ in 0..<np { p.append(raw.loadUnaligned(fromByteOffset: off, as: Float.self)); off += 4 }
             out = p

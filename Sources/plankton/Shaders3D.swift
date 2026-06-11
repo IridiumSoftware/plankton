@@ -228,9 +228,10 @@ enum Shaders3D {
                        constant uint &frame        [[buffer(5)]],
                        device const float *dye     [[buffer(6)]],
                        constant uint &count        [[buffer(7)]],
+                       device const uint *cohortOf [[buffer(8)]],
                        uint gid [[thread_position_in_grid]]) {
         Particle3D p = parts[gid];
-        uint off = ((gid * uint(N_COHORTS3)) / count) * 20;   // this agent's cohort block
+        uint off = cohortOf[gid] * 20;   // this agent's cohort block (membership can shift under ecology mode)
         float3 dd = float3(d);
         float speed = length(p.vel);
         float3 fwd = speed > 1e-6 ? p.vel / speed : float3(1.0, 0.0, 0.0);
@@ -291,12 +292,13 @@ enum Shaders3D {
     vertex P3Out point3d_vertex(uint vid                       [[vertex_id]],
                                 device const Particle3D *parts  [[buffer(0)]],
                                 constant float4x4 &viewProj     [[buffer(1)]],
-                                constant uint &count            [[buffer(2)]]) {
+                                constant uint &count            [[buffer(2)]],
+                                device const uint *cohortOf     [[buffer(3)]]) {
         Particle3D p = parts[vid];
         P3Out o;
         o.position = viewProj * float4(p.pos, 1.0);
         o.pointSize = 2.5;
-        o.col = COHORT_COLS[(vid * uint(N_COHORTS3)) / count];
+        o.col = COHORT_COLS[cohortOf[vid]];
         return o;
     }
     fragment float4 point3d_fragment(P3Out in [[stage_in]], float2 pc [[point_coord]],

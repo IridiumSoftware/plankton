@@ -123,8 +123,22 @@ func runEcologySimTest() {
     // cycles in-engine: nobody eliminated (min>0) AND counts actually moved (max grew past uniform)
     let rpsOK = rpsCounts.reduce(0, +) == N && minAcross > 0 && maxAcross > N / n + 1000
 
-    let ok = domOK && rpsOK
-    print(ok ? "RESULT       : PASS — cohort buffer tracks the replicator in-engine."
+    // ── 3D engine: same reallocation glue on Sim3D ──
+    let lib3 = try! device.makeLibrary(source: Shaders3D.source, options: nil)
+    let N3 = 1 << 18
+    let sim3 = Sim3D(device: device, library: lib3, count: N3, fieldDim: 64)
+    func counts3() -> [Int] {
+        let c = sim3.cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N3)
+        var k = [Int](repeating: 0, count: n); for i in 0..<N3 { k[Int(c[i])] += 1 }; return k
+    }
+    sim3.syncEcologyFromAgents(); sim3.setEcologyPreset(.dominance); sim3.ecologyOn = true
+    for _ in 0..<3000 { sim3.stepEcology() }
+    let dom3 = counts3()
+    print("3D dominance : \(dom3)  (Σ=\(dom3.reduce(0,+)))")
+    let dom3OK = dom3.reduce(0, +) == N3 && dom3[0] > Int(0.95 * Double(N3))
+
+    let ok = domOK && rpsOK && dom3OK
+    print(ok ? "RESULT       : PASS — cohort buffer tracks the replicator in-engine (2D + 3D)."
              : "RESULT       : CHECK — in-engine reallocation failed.")
     if !ok { exit(1) }
 }

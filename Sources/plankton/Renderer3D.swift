@@ -64,6 +64,28 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     func toggleVideo(size: CGSize) { recorder.toggleVideo(size: size) }
     func toggleGIF(size: CGSize) { recorder.toggleGIF(size: size) }
 
+    // ecology mode: cycle off → rps → coexistence → dominance (the `e` key).
+    // The 8 cohorts become game-theory strategies; cohort colours (raise pointAlpha)
+    // show the live mix rippling through the volume.
+    private var ecoState = 0
+    private let ecoPresets: [Ecology.Preset] = [.rps, .coexistence, .dominance]
+    func cycleEcology() {
+        ecoState = (ecoState + 1) % 4
+        if ecoState == 0 {
+            sim.ecologyOn = false
+            onCaptureStatus?("ecology: off")
+        } else {
+            if !sim.ecologyOn {
+                sim.syncEcologyFromAgents()
+                if pointAlpha < 0.1 { pointAlpha = 0.18 }   // make the cohort colours visible over the volume
+            }
+            let preset = ecoPresets[ecoState - 1]
+            sim.setEcologyPreset(preset)
+            sim.ecologyOn = true
+            onCaptureStatus?("ecology: \(preset.rawValue) — cohort colours = strategy mix")
+        }
+    }
+
     func reroll() { sim.rerollRule() }
 
     // right-click breed: unproject the click into a world ray (same math as the
@@ -134,6 +156,8 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         journal.tickReplay(paramWrite)   // applies scheduled param changes (no-op unless replaying)
         journal.tickRecord(paramRead)    // records param deltas (no-op unless recording)
 
+        sim.stepEcology()   // replicator-mutator reallocation (no-op unless ecology mode is on)
+
         // simSpeed: accumulate fractional steps — ≥1 runs that many sim steps per
         // frame (capped), <1 steps only on some frames (slow-mo), 0 pauses.
         simAcc += sim.simSpeed
@@ -169,6 +193,7 @@ final class Renderer3D: NSObject, MTKViewDelegate {
             enc.setVertexBytes(&vp, length: MemoryLayout<float4x4>.stride, index: 1)
             var cnt = UInt32(sim.count)
             enc.setVertexBytes(&cnt, length: 4, index: 2)
+            enc.setVertexBuffer(sim.cohortBuffer, offset: 0, index: 3)
             var pa = pointAlpha
             enc.setFragmentBytes(&pa, length: 4, index: 0)
             enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.count)

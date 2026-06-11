@@ -80,6 +80,7 @@ final class App3D: NSObject, NSApplicationDelegate {
             case "k": self.renderer.replayLastPath(); self.panel.refresh()
             case "v": self.renderer.toggleVideo(size: self.view.drawableSize)
             case "g": self.renderer.toggleGIF(size: self.view.drawableSize)
+            case "e": self.renderer.cycleEcology()                          // ecology mode: off→rps→coex→dom
             default: break
             }
         }
@@ -94,6 +95,7 @@ final class App3D: NSObject, NSApplicationDelegate {
         c / x        capture creature / restore (cycle)
         j / k        record path (toggle) / replay path
         v / g        record mp4 / gif clip (toggle) → captures/video
+        e            ecology mode: off → rps → coexistence → dominance
         """)
         help.setFrameOrigin(NSPoint(x: 12, y: 12))
         help.autoresizingMask = [.maxXMargin, .maxYMargin]
@@ -132,6 +134,11 @@ final class App3D: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: go)
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: go)
             DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { NSApp.terminate(nil) }
+        }
+        // Smoke hook for the live ecology render path (cohort-tinted points + reallocation).
+        if ProcessInfo.processInfo.environment["PLANKTON_AUTOECO"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.renderer.cycleEcology() }   // → rps
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { NSApp.terminate(nil) }
         }
     }
 
