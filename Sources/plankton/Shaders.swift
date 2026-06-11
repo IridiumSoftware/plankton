@@ -262,9 +262,10 @@ enum Shaders {
                                device const float4 *rule    [[buffer(4)]],
                                constant uint &count         [[buffer(5)]],
                                device const float *dye      [[buffer(6)]],
+                               device const uint *cohortOf  [[buffer(7)]],
                                uint gid [[thread_position_in_grid]]) {
         Particle p = parts[gid];
-        uint off = ((gid * uint(N_COHORTS)) / count) * 20;   // this agent's cohort block
+        uint off = cohortOf[gid] * 20;   // this agent's cohort block (membership can shift under ecology mode)
         float2 dd = float2(d);
         float spd = length(p.vel);
         float2 fwd = spd > 1e-6 ? p.vel / spd : float2(1.0, 0.0);
@@ -400,10 +401,11 @@ enum Shaders {
     vertex PointOut point_vertex(uint vid                  [[vertex_id]],
                                  device const Particle *parts [[buffer(0)]],
                                  constant float &pointSize    [[buffer(1)]],
-                                 constant uint &count         [[buffer(2)]]) {
+                                 constant uint &count         [[buffer(2)]],
+                                 device const uint *cohortOf  [[buffer(3)]]) {
         Particle p = parts[vid];
         float spd = length(p.vel);
-        uint cohort = (vid * uint(N_COHORTS)) / count;
+        uint cohort = cohortOf[vid];
         PointOut o;
         o.position = float4(p.pos * 2.0 - 1.0, 0.0, 1.0);
         o.pointSize = pointSize * (1.0 + spd * 4.0);

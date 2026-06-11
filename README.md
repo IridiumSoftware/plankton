@@ -49,6 +49,8 @@ swift run plankton --capturetest # full-state capture round-trips bit-for-bit
 swift run plankton --spectest    # FFT energy-spectrum estimator check
 swift run plankton --vortprobe   # research views stay live (incl. paused)
 swift run plankton --rectest     # mp4 + gif clip encoders write valid files
+swift run plankton --ecologytest # replicator-mutator dynamics core (RPS/ESS/…)
+swift run plankton --ecologysim  # ecology reallocation tracks p in-engine
 
 # headless studies (write CSVs under data/; see docs/spectrum_study.md):
 swift run plankton --sweep       # parameter survey        → data/sweep_results.csv
@@ -71,6 +73,7 @@ agents overlaid. A live, grouped slider panel (top-left) tunes everything.
 - **`c` / `x`** — capture / restore a creature (full state, see below).
 - **`j` / `k`** — record / replay a parameter path.
 - **`v` / `g`** — record an mp4 / animated-GIF clip (toggle; see below).
+- **`e`** — cycle **ecology mode** (off → RPS → coexistence → dominance; see below).
 - **Save / Load / Reset** buttons — presets (params + brains) to `presets/*.json`.
 - **Diag** toggle — research mode (HUD + plot + field calcs) vs art mode (perf).
 - **`viewMode`** dropdown — dye art / **vorticity** ω / **enstrophy** |ω|² /
@@ -116,6 +119,27 @@ creatures can't be reproduced from a preset alone. The capture system
   state.
 
 Works identically in 3D (`captures/creatures3d`, `.fluo3`).
+
+## Ecology mode (replicator dynamics)
+
+Press **`e`** to treat the 8 cohorts as competing **strategies** in an
+evolutionary game. Their frequencies `pᵢ` (how much of the population runs brain
+`i`) evolve by the **replicator equation** `ṗᵢ = pᵢ(πᵢ − π̄)` — higher-than-average
+payoff strategies grow, lower ones shrink — and agents are relabelled each step so
+the cohort colours (raise `pointAlpha`) show the live mix. Extinct strategies are
+reseeded as a mutation of the current leader (the **mutator**, since the replicator
+alone can't innovate). `e` cycles three payoff matrices:
+
+- **RPS** — generalised Rock-Paper-Scissors: dominance rotates between cohorts in
+  neutral cycles (nobody wins or dies).
+- **coexistence** — rare strategies pay best → a stable polymorphic mix.
+- **dominance** — one strategy takes over.
+
+This is **stage 1 (global / well-mixed payoff)** — the dynamics core, verified by
+`--ecologytest` (simplex invariance, RPS cycles, ESS convergence, mutator) and
+`--ecologysim` (the cohort buffer tracks `p` in a real sim). Stage 2 will make the
+payoff **spatial** (agents play their neighbours) for pattern formation — RPS
+spiral waves and coexistence polymorphism. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Recording: video & GIF
 

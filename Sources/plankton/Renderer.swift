@@ -68,6 +68,28 @@ final class Renderer: NSObject, MTKViewDelegate {
     func toggleVideo(size: CGSize) { recorder.toggleVideo(size: size) }
     func toggleGIF(size: CGSize) { recorder.toggleGIF(size: size) }
 
+    // ecology mode: cycle off → rps → coexistence → dominance → off (the `e` key).
+    // The 8 cohorts become game-theory strategies whose frequencies evolve by the
+    // replicator equation; cohort colours (raise pointAlpha) show the live mix.
+    private var ecoState = 0
+    private let ecoPresets: [Ecology.Preset] = [.rps, .coexistence, .dominance]
+    func cycleEcology() {
+        ecoState = (ecoState + 1) % 4
+        if ecoState == 0 {
+            sim.ecologyOn = false
+            onCaptureStatus?("ecology: off")
+        } else {
+            if !sim.ecologyOn {
+                sim.syncEcologyFromAgents()
+                if params.pointAlpha < 0.25 { params.pointAlpha = 0.35 }   // make the cohort colours visible
+            }
+            let preset = ecoPresets[ecoState - 1]
+            sim.setEcologyPreset(preset)
+            sim.ecologyOn = true
+            onCaptureStatus?("ecology: \(preset.rawValue) — cohort colours = strategy mix")
+        }
+    }
+
     func reroll() { sim.rerollRule(); spectrum.resetAverage() }
     func reset() { sim.reset(); spectrum.resetAverage() }
     func ruleSnapshot() -> [Float] { sim.ruleSnapshot() }
@@ -159,6 +181,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         journal.tickReplay { i, v in self.params[keyPath: engineKnobs[i].kp] = v }
         journal.tickRecord { engineKnobs.map { self.params[keyPath: $0.kp] } }
 
+        sim.stepEcology()   // replicator-mutator reallocation (no-op unless ecology mode is on)
+
         // research-viz HUD: compute diagnostics a few times a second from the
         // last completed frame's fields (before this frame's encode touches them)
         hudFrame += 1
@@ -213,6 +237,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             enc.setVertexBuffer(sim.particleBuffer, offset: 0, index: 0)
             enc.setVertexBytes(&pointSize, length: 4, index: 1)
             enc.setVertexBytes(&count, length: 4, index: 2)
+            enc.setVertexBuffer(sim.cohortBuffer, offset: 0, index: 3)
             enc.setFragmentBytes(&pointAlpha, length: 4, index: 0)
             enc.drawPrimitives(type: .point, vertexStart: 0, vertexCount: sim.particleCount)
         }

@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "k": self.renderer?.replayLastPath(); self.controls?.refresh()   // replay latest path
             case "v": self.renderer?.toggleVideo(size: self.mtkView.drawableSize)  // record mp4 (toggle)
             case "g": self.renderer?.toggleGIF(size: self.mtkView.drawableSize)    // record gif (toggle)
+            case "e": self.renderer?.cycleEcology()                          // ecology mode: off→rps→coex→dom
             default: self.tuning.handleKey(key)
             }
         }
@@ -111,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         c / x        capture creature / restore (cycle captures)
         j / k        record path (toggle) / replay last path
         v / g        record mp4 / gif clip (toggle) → captures/video
+        e            ecology mode: off → rps → coexistence → dominance
         [ ] / - =    keyboard tuning (sliders are primary)
         space        print all params
         """)
@@ -145,6 +147,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Smoke hook for the live record path (no keystrokes needed): with
         // PLANKTON_AUTOREC set, record ~2.4 s of mp4 then quit. Lets the GUI
         // blit→encode path be verified non-interactively. Harmless when unset.
+        // Smoke hook for the live ecology render path: turn ecology on, run, quit.
+        if ProcessInfo.processInfo.environment["PLANKTON_AUTOECO"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.renderer?.cycleEcology() }   // → rps
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { NSApp.terminate(nil) }
+        }
+
         if let mode = ProcessInfo.processInfo.environment["PLANKTON_AUTOREC"] {
             let gif = (mode == "gif")
             let go: () -> Void = { if gif { self.renderer?.toggleGIF(size: self.mtkView.drawableSize) }

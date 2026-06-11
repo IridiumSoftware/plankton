@@ -33,15 +33,18 @@ natural extension:
   GRN-style update rules.
 - **Optional automatic search modes** — novelty search or a fitness-driven GA
   as a *toggle* alongside directed evolution (see the design principle above).
+  **Replicator-mutator ecology mode is now prototyped** (`e` key): the 8 cohorts
+  are game-theory strategies whose frequencies evolve by the replicator equation.
+  **Stage 1 (global / well-mixed payoff) is done and verified** (`--ecologytest`,
+  `--ecologysim`); **stage 2 = spatial payoff** (agents play their neighbours →
+  RPS spiral waves, coexistence polymorphism) is the next step, and folds into
+  multi-species (below).
 - Keep the mirror-symmetry trick (no built-in handedness) for whatever brain
   replaces the Fourier sum.
 
-### Sharing: video / GIF export
-No built-in capture-to-video yet — currently you screenshot, or capture state
-(`c`) and re-shoot. An in-app **record → mp4/GIF** (offscreen render loop →
-frame encode via AVFoundation, or PNG frames + an ffmpeg note) would be
-**high-value, modest-effort**, and the single biggest lever for sharing what
-the engine produces. Strong candidate for the next feature.
+### Sharing: video / GIF export — DONE
+Shipped: in-app **`v`** (mp4) / **`g`** (GIF) recording, 2D and 3D, to
+`captures/video/`. (Was: the single biggest lever for sharing.)
 
 ### Scale
 - **Larger grids / more agents.** `fieldDim` and `particleCount` are already

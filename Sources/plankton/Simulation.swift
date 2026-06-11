@@ -33,6 +33,7 @@ final class Simulation {
     private(set) var vort: MTLBuffer           // vorticity ω of the projected field
     private(set) var divDisp: MTLBuffer         // divergence of the projected field (display)
     let particleBuffer: MTLBuffer
+    let cohortBuffer: MTLBuffer        // uint per agent: which cohort/strategy it runs
     let ruleBuffer: MTLBuffer          // 20 float4: [0..9] freqs, [10..19] amps
 
     private let scalePipe, advectVelPipe, diffusePipe, splatPipe, mouseStirPipe, divPipe,
@@ -67,6 +68,13 @@ final class Simulation {
         particleBuffer = device.makeBuffer(
             bytes: &particles,
             length: MemoryLayout<Particle>.stride * particleCount,
+            options: .storageModeShared)!
+
+        // per-agent cohort index (was a fixed index partition; now explicit so
+        // ecology mode can reassign membership). Seeded to the same partition.
+        var coh = Simulation.partitionCohorts(count: particleCount)
+        cohortBuffer = device.makeBuffer(
+            bytes: &coh, length: MemoryLayout<UInt32>.stride * particleCount,
             options: .storageModeShared)!
 
         var rule = Simulation.randomRule()
@@ -220,6 +228,75 @@ final class Simulation {
             e.setBuffer(self.ruleBuffer, offset: 0, index: 4)
             e.setBytes(&countv, length: 4, index: 5)
             e.setBuffer(self.dye, offset: 0, index: 6)
+            e.setBuffer(self.cohortBuffer, offset: 0, index: 7)
+        }
+    }
+
+    // the fixed index-partition cohort assignment (default / pre-ecology layout)
+    static func partitionCohorts(count: Int) -> [UInt32] {
+        (0..<count).map { UInt32(($0 * nCohorts) / count) }
+    }
+
+    // ── ecology mode (replicator-mutator over the 8 cohort strategies) ──────
+    // STAGE 1 (global): the cohort frequencies evolve by the replicator equation
+    // under a well-mixed payoff π = A·p; agents are relabelled each step so the
+    // on-screen colour proportions track p. Extinct strategies are reseeded as a
+    // mutation of the leader (the mutator). Stage 2 will make the payoff spatial.
+    var ecology = Ecology()
+    var ecologyOn = false
+    private var ecoFrame = 0
+    private let ecoEvery = 8          // step the replicator every N rendered frames
+    private let ecoDt = 0.05
+
+    // sync the ecology's frequencies from the current agent counts (call on enable)
+    func syncEcologyFromAgents() {
+        let coh = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: particleCount)
+        var cur = [Double](repeating: 0, count: Simulation.nCohorts)
+        for i in 0..<particleCount { cur[Int(coh[i])] += 1 }
+        let s = cur.reduce(0, +)
+        ecology.p = s > 0 ? cur.map { $0 / s } : ecology.p
+        ecoFrame = 0
+    }
+
+    func setEcologyPreset(_ preset: Ecology.Preset) { ecology.A = Ecology.matrix(preset) }
+
+    // advance the ecology one tick (throttled); call once per rendered frame.
+    func stepEcology() {
+        guard ecologyOn else { return }
+        ecoFrame += 1
+        guard ecoFrame % ecoEvery == 0 else { return }
+        ecology.step(dt: ecoDt)
+        ecology.reseedExtinct { dead, leader in self.mutateRuleBlock(dead, from: leader) }
+        reallocateCohorts(to: ecology.p)
+    }
+
+    // mutate cohort `dead`'s 80-param brain from `leader` (the mutator's innovation)
+    private func mutateRuleBlock(_ dead: Int, from leader: Int) {
+        let rf = ruleBuffer.contents().bindMemory(to: Float.self, capacity: Simulation.nCohorts * 80)
+        var rng = SystemRandomNumberGenerator()
+        let m = max(0.05, params.mutationStrength)
+        for k in 0..<80 { rf[dead * 80 + k] = rf[leader * 80 + k] + Float.random(in: -m...m, using: &rng) }
+    }
+
+    // relabel agents so cohort counts match round(p_i · N), in one O(N) pass.
+    private func reallocateCohorts(to p: [Double]) {
+        let n = Simulation.nCohorts, N = particleCount
+        let c = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
+        var cur = [Int](repeating: 0, count: n)
+        for i in 0..<N { cur[Int(c[i])] += 1 }
+        var tgt = p.map { Int(($0 * Double(N)).rounded()) }
+        var drift = N - tgt.reduce(0, +)                 // fix rounding so Σtgt == N
+        var k = 0
+        while drift != 0 { let s = drift > 0 ? 1 : -1; if tgt[k % n] + s >= 0 { tgt[k % n] += s; drift -= s }; k += 1 }
+        var need = (0..<n).map { tgt[$0] - cur[$0] }     // >0 wants more, <0 has surplus
+        var recv = 0
+        for i in 0..<N {
+            let old = Int(c[i])
+            if need[old] < 0 {                            // surplus cohort → move this agent
+                while recv < n && need[recv] <= 0 { recv += 1 }
+                if recv >= n { break }
+                c[i] = UInt32(recv); need[old] += 1; need[recv] -= 1
+            }
         }
     }
 
@@ -298,10 +375,11 @@ final class Simulation {
         var data = Data()
         func putI(_ v: Int32) { var x = v; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
         func putBuf(_ b: MTLBuffer, _ floats: Int) { data.append(Data(bytes: b.contents(), count: floats * 4)) }
-        putI(0x464C554F); putI(1)                                  // magic "FLUO", version
+        putI(0x464C554F); putI(2)                                  // magic "FLUO", version (2 = + per-agent cohorts)
         putI(Int32(dim.x)); putI(Int32(particleCount)); putI(Int32(Simulation.nCohorts))
         putBuf(vel, 2 * n); putBuf(dye, n)
         putBuf(particleBuffer, particleCount * 4); putBuf(ruleBuffer, Simulation.nCohorts * 80)
+        putBuf(cohortBuffer, particleCount)                        // v2: per-agent cohort index
         putI(Int32(engineKnobs.count))
         for k in engineKnobs { var v = params[keyPath: k.kp]; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
         return data
@@ -318,13 +396,19 @@ final class Simulation {
                 memcpy(b.contents(), raw.baseAddress!.advanced(by: off), floats * 4); off += floats * 4
             }
             guard i32() == 0x464C554F else { print("capture: bad magic"); return }
-            _ = i32()                                              // version
+            let version = Int(i32())
             let fd = Int(i32()), pc = Int(i32()), ncoh = Int(i32())
             guard fd == Int(dim.x), pc == particleCount, ncoh == Simulation.nCohorts else {
                 print("capture: dims mismatch (\(fd)/\(pc)/\(ncoh) vs \(Int(dim.x))/\(particleCount)/\(Simulation.nCohorts))"); return
             }
             getBuf(vel, 2 * n); getBuf(dye, n)
             getBuf(particleBuffer, particleCount * 4); getBuf(ruleBuffer, Simulation.nCohorts * 80)
+            if version >= 2 {
+                getBuf(cohortBuffer, particleCount)                // v2: per-agent cohort index
+            } else {
+                var coh = Simulation.partitionCohorts(count: particleCount)   // v1: rebuild the partition
+                memcpy(cohortBuffer.contents(), &coh, particleCount * 4)
+            }
             let np = Int(i32())
             for (idx, k) in engineKnobs.enumerated() where idx < np {
                 params[keyPath: k.kp] = raw.loadUnaligned(fromByteOffset: off, as: Float.self); off += 4
@@ -361,13 +445,14 @@ final class Simulation {
     func breedAt(_ clickPos: SIMD2<Float>) {
         let nc = Simulation.nCohorts
         let p = particleBuffer.contents().bindMemory(to: Particle.self, capacity: particleCount)
+        let coh = cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: particleCount)
         var votes = [Int](repeating: 0, count: nc)
         let radius2: Float = 0.10 * 0.10
         let stepN = max(1, particleCount / 200_000)   // subsample for speed
         var i = 0
         while i < particleCount {
             if simd_length_squared(p[i].pos - clickPos) < radius2 {
-                votes[(i * nc) / particleCount] += 1
+                votes[Int(coh[i])] += 1          // vote by the agent's actual cohort
             }
             i += stepN
         }

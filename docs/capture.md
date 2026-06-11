@@ -54,6 +54,10 @@ The 3D format is versioned: **v2** stores all 8 cohort brains (since 3D breeding
 **v1** files (single brain) still load — the brain is replicated into every cohort, so a
 breed on a restored v1 creature starts from 7 mutants of its original brain.
 
+The 2D `.fluo` format is likewise versioned: **v2** adds the per-agent cohort index
+(`cohortBuffer`), so a creature grown under ecology mode restores its exact strategy mix;
+**v1** files still load (cohort membership is rebuilt from the default index partition).
+
 ## Why bit-for-bit matters
 
 The full-state capture is a byte copy of the GPU-shared buffers, so restore is exact — no

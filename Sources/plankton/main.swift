@@ -40,6 +40,10 @@ if CommandLine.arguments.contains("--ecologytest") {
     runEcologyTest()
     exit(0)
 }
+if CommandLine.arguments.contains("--ecologysim") {
+    runEcologySimTest()
+    exit(0)
+}
 if CommandLine.arguments.contains("--sweep") {
     runSweep()
     exit(0)

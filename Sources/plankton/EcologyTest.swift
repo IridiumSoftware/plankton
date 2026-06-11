@@ -1,4 +1,5 @@
 import Foundation
+import Metal
 
 // Headless verification of the replicator-mutator core (run via `--ecologytest`).
 // Proves the dynamics are correct before any sim coupling:
@@ -73,4 +74,57 @@ func runEcologyTest() {
     print(allPass ? "RESULT       : PASS — replicator-mutator core verified."
                   : "RESULT       : CHECK — a dynamics check failed.")
     if !allPass { exit(1) }
+}
+
+// In-engine check (run via `--ecologysim`): drive a real Simulation through ecology
+// mode and confirm the per-agent cohort buffer (cohortBuffer) actually tracks the
+// replicator frequencies — the glue between the ODE and the GPU population. No
+// window needed (the reallocation + mutator are CPU; the GPU sim isn't required).
+func runEcologySimTest() {
+    guard let device = MTLCreateSystemDefaultDevice() else { fatalError("No Metal device.") }
+    let library = try! device.makeLibrary(source: Shaders.source, options: nil)
+    let n = Simulation.nCohorts, N = 1 << 18
+    let sim = Simulation(device: device, library: library, params: Params(),
+                         mouse: MouseInput(), particleCount: N, fieldDim: 256)
+
+    func counts() -> [Int] {
+        let c = sim.cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
+        var k = [Int](repeating: 0, count: n); for i in 0..<N { k[Int(c[i])] += 1 }; return k
+    }
+    let start = counts()
+    print("start counts : \(start)  (Σ=\(start.reduce(0,+)))")
+
+    // dominance → strategy 0 should take over the agent population
+    sim.syncEcologyFromAgents(); sim.setEcologyPreset(.dominance); sim.ecologyOn = true
+    for _ in 0..<3000 { sim.stepEcology() }
+    let dom = counts(); let domSum = dom.reduce(0, +)
+    print("dominance    : \(dom)  (Σ=\(domSum))")
+    let domOK = domSum == N && dom[0] > Int(0.95 * Double(N))
+
+    // rps → all cohorts stay populated (cycling, nobody eliminated)
+    sim.ecologyOn = false
+    let fresh = Simulation(device: device, library: library, params: Params(),
+                           mouse: MouseInput(), particleCount: N, fieldDim: 256)
+    fresh.syncEcologyFromAgents(); fresh.setEcologyPreset(.rps)
+    fresh.ecology.p[0] += 0.06; fresh.ecology.p[4] -= 0.06   // perturb off the uniform rest point
+    fresh.ecologyOn = true
+    var minAcross = N, maxAcross = 0
+    for _ in 0..<3000 {
+        fresh.stepEcology()
+        let c = fresh.cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
+        var k = [Int](repeating: 0, count: n); for i in 0..<N { k[Int(c[i])] += 1 }
+        minAcross = min(minAcross, k.min()!); maxAcross = max(maxAcross, k.max()!)
+    }
+    let rpsCounts = (0..<n).map { j -> Int in
+        let c = fresh.cohortBuffer.contents().bindMemory(to: UInt32.self, capacity: N)
+        var t = 0; for i in 0..<N where Int(c[i]) == j { t += 1 }; return t
+    }
+    print("rps end      : \(rpsCounts)  (Σ=\(rpsCounts.reduce(0,+)))  min-ever=\(minAcross)  max-ever=\(maxAcross)")
+    // cycles in-engine: nobody eliminated (min>0) AND counts actually moved (max grew past uniform)
+    let rpsOK = rpsCounts.reduce(0, +) == N && minAcross > 0 && maxAcross > N / n + 1000
+
+    let ok = domOK && rpsOK
+    print(ok ? "RESULT       : PASS — cohort buffer tracks the replicator in-engine."
+             : "RESULT       : CHECK — in-engine reallocation failed.")
+    if !ok { exit(1) }
 }

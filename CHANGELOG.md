@@ -6,6 +6,13 @@ All notable changes to **plankton** are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Ecology mode** (`e`) — replicator-mutator dynamics over the 8 cohorts:
+  they become game-theory strategies whose frequencies evolve by the replicator
+  equation under a payoff matrix (RPS / coexistence / dominance presets), with
+  extinct strategies reseeded from the leader. Stage 1 is the global/well-mixed
+  core, verified by `--ecologytest` and `--ecologysim`; stage 2 will make the
+  payoff spatial (RPS spiral waves). Cohort membership is now per-agent
+  (`cohortBuffer`), so the 2D capture format is bumped to v2 (v1 files still load).
 - **In-app video & GIF recording** (closes #1). `v` records an H.264 mp4 (full
   resolution, streamed via AVAssetWriter); `g` records a downscaled animated GIF
   (ImageIO) — both in 2D and 3D, written to `captures/video/`. Frames are blitted
