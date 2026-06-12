@@ -45,10 +45,11 @@ struct MoveParamsGPU {
     var cohesion: Float
 }
 
-// One tunable knob: name, where it lives in Params, range, keyboard step, group.
-// Shared source of truth for both the slider panel and keyboard tuning.
-// `options` non-nil ⇒ the panel renders a dropdown (value = option index) instead
-// of a slider — for discrete modes like viewMode.
+// One tunable knob: name, where it lives in Params, range, keyboard step, group,
+// and a plain-language `info` line (tooltip + sidebar footer). Shared source of
+// truth for the slider panel, keyboard tuning, AND the capture/path serialization
+// (which writes params by ARRAY index — so the array is append-only; `group` is
+// display-only bucketing). `options` non-nil ⇒ a dropdown (value = option index).
 struct Knob {
     let name: String
     let kp: ReferenceWritableKeyPath<Params, Float>
@@ -56,42 +57,66 @@ struct Knob {
     let hi: Float
     let step: Float
     let group: String
+    var info: String = ""
     var options: [String]? = nil
 }
 
-// Ordered by group; the panel draws a header whenever the group changes.
+// ARRAY ORDER = serialization order (append-only). Groups mirror the 3D panel:
+// Agents / Fluid / Dye / Display / Mouse / Research / Time.
 let engineKnobs: [Knob] = [
-    // ── Particles (simulation behavior) ──
-    Knob(name: "swim",        kp: \.swim,        lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Particles"),
-    Knob(name: "sensorDist",  kp: \.sensorDist,  lo: 0.001, hi: 0.10,  step: 0.002, group: "Particles"),
-    Knob(name: "sensorAngle", kp: \.sensorAngle, lo: 0.0,   hi: 1.50,  step: 0.05,  group: "Particles"),
-    Knob(name: "turn",        kp: \.turn,        lo: 0.0,   hi: 1.50,  step: 0.05,  group: "Particles"),
-    Knob(name: "senseScale",  kp: \.senseScale,  lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Particles"),
-    Knob(name: "speedGain",   kp: \.speedGain,   lo: 0.0,   hi: 2.0,   step: 0.05,  group: "Particles"),
-    Knob(name: "cohesion",    kp: \.cohesion,    lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Particles"),
-    Knob(name: "viscosity",   kp: \.viscosity,   lo: 0.0,   hi: 0.25,  step: 0.01,  group: "Particles"),
-    Knob(name: "dipoleLen",   kp: \.dipoleLen,   lo: 0.0,   hi: 6.0,   step: 0.5,   group: "Particles"),
-    Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05,  group: "Particles"),
-    Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25,  group: "Particles"),
-    Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005, group: "Particles"),
-    Knob(name: "dyeDecay",    kp: \.dyeDecay,    lo: 0.50,  hi: 0.999, step: 0.005, group: "Particles"),
-    Knob(name: "mutationStrength", kp: \.mutationStrength, lo: 0.0, hi: 1.5, step: 0.05, group: "Particles"),
-    // ── VFX (rendering) ──
-    Knob(name: "toneK",       kp: \.toneK,       lo: 0.001, hi: 0.20,  step: 0.002, group: "VFX"),
-    Knob(name: "satGain",     kp: \.satGain,     lo: 0.0,   hi: 3.0,   step: 0.05,  group: "VFX"),
-    Knob(name: "palette",     kp: \.palette,     lo: 0.0,   hi: 2.0,   step: 1.0,   group: "VFX"),
-    Knob(name: "bloomStrength", kp: \.bloomStrength, lo: 0.0, hi: 3.0, step: 0.05,  group: "VFX"),
-    Knob(name: "pointAlpha",  kp: \.pointAlpha,  lo: 0.0,   hi: 1.0,   step: 0.02,  group: "VFX"),
-    Knob(name: "pointSize",   kp: \.pointSize,   lo: 0.0,   hi: 6.0,   step: 0.5,   group: "VFX"),
-    // ── Mouse (interaction) ──
-    Knob(name: "mouseForce",  kp: \.mouseForce,  lo: 0.0,   hi: 1.0,   step: 0.02,  group: "Mouse"),
-    Knob(name: "mouseDye",    kp: \.mouseDye,    lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Mouse"),
-    Knob(name: "mouseRadius", kp: \.mouseRadius, lo: 0.01,  hi: 0.20,  step: 0.005, group: "Mouse"),
-    // ── Research (diagnostics) ──
+    Knob(name: "swim",        kp: \.swim,        lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Agents",
+         info: "Agent self-propulsion speed."),
+    Knob(name: "sensorDist",  kp: \.sensorDist,  lo: 0.001, hi: 0.10,  step: 0.002, group: "Agents",
+         info: "How far ahead the two sensors reach — sets the eddy scale agents react to."),
+    Knob(name: "sensorAngle", kp: \.sensorAngle, lo: 0.0,   hi: 1.50,  step: 0.05,  group: "Agents",
+         info: "Angular spread between the left/right sensors (radians)."),
+    Knob(name: "turn",        kp: \.turn,        lo: 0.0,   hi: 1.50,  step: 0.05,  group: "Agents",
+         info: "Steering gain — how sharply the brain can turn the agent per step."),
+    Knob(name: "senseScale",  kp: \.senseScale,  lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Agents",
+         info: "Gain on the sensed flow before it enters the brain (higher = more reactive)."),
+    Knob(name: "speedGain",   kp: \.speedGain,   lo: 0.0,   hi: 2.0,   step: 0.05,  group: "Agents",
+         info: "How much the brain can speed up / slow down the swim speed."),
+    Knob(name: "cohesion",    kp: \.cohesion,    lo: 0.0,   hi: 0.50,  step: 0.01,  group: "Agents",
+         info: "Chemotaxis toward higher dye = toward other agents. The creature-maker — crank it to grow membranes and cells."),
+    Knob(name: "viscosity",   kp: \.viscosity,   lo: 0.0,   hi: 0.25,  step: 0.01,  group: "Fluid",
+         info: "Real ν∇² viscosity — dissipates small scales selectively (the physical damping)."),
+    Knob(name: "dipoleLen",   kp: \.dipoleLen,   lo: 0.0,   hi: 6.0,   step: 0.5,   group: "Fluid",
+         info: "Spacing of each agent's +f/−f force pair, in grid cells (net-zero swimmer forcing)."),
+    Knob(name: "forceGain",   kp: \.forceGain,   lo: 0.0,   hi: 5.0,   step: 0.05,  group: "Fluid",
+         info: "How hard each agent pushes on the fluid."),
+    Knob(name: "fluidPull",   kp: \.fluidPull,   lo: 0.0,   hi: 10.0,  step: 0.25,  group: "Fluid",
+         info: "How strongly the fluid carries agents along (their advection)."),
+    Knob(name: "velDamp",     kp: \.velDamp,     lo: 0.50,  hi: 0.999, step: 0.005, group: "Fluid",
+         info: "Residual large-scale drag per step (1 = none) — the big-eddy energy sink."),
+    Knob(name: "dyeDecay",    kp: \.dyeDecay,    lo: 0.50,  hi: 0.999, step: 0.005, group: "Dye",
+         info: "Dye persistence per step (closer to 1 = trails linger longer)."),
+    Knob(name: "mutationStrength", kp: \.mutationStrength, lo: 0.0, hi: 1.5, step: 0.05, group: "Agents",
+         info: "How strongly right-click breeding (and ecology reseeding) mutates brains."),
+    Knob(name: "toneK",       kp: \.toneK,       lo: 0.001, hi: 0.20,  step: 0.002, group: "Display",
+         info: "Exposure: dye density → brightness."),
+    Knob(name: "satGain",     kp: \.satGain,     lo: 0.0,   hi: 3.0,   step: 0.05,  group: "Display",
+         info: "Flow speed → color saturation."),
+    Knob(name: "palette",     kp: \.palette,     lo: 0.0,   hi: 2.0,   step: 1.0,   group: "Display",
+         info: "Color scheme for the dye art (0 direction-hue, 1 thermal, 2 teal)."),
+    Knob(name: "bloomStrength", kp: \.bloomStrength, lo: 0.0, hi: 3.0, step: 0.05,  group: "Display",
+         info: "Soft glow bled off bright dye."),
+    Knob(name: "pointAlpha",  kp: \.pointAlpha,  lo: 0.0,   hi: 1.0,   step: 0.02,  group: "Display",
+         info: "Agent dot brightness, tinted by cohort (0 hides the agents)."),
+    Knob(name: "pointSize",   kp: \.pointSize,   lo: 0.0,   hi: 6.0,   step: 0.5,   group: "Display",
+         info: "Agent dot size."),
+    Knob(name: "mouseForce",  kp: \.mouseForce,  lo: 0.0,   hi: 1.0,   step: 0.02,  group: "Mouse",
+         info: "Stir strength of a mouse drag."),
+    Knob(name: "mouseDye",    kp: \.mouseDye,    lo: 0.0,   hi: 20.0,  step: 0.5,   group: "Mouse",
+         info: "Dye injected while dragging."),
+    Knob(name: "mouseRadius", kp: \.mouseRadius, lo: 0.01,  hi: 0.20,  step: 0.005, group: "Mouse",
+         info: "Brush radius of the mouse stir."),
     Knob(name: "viewMode",    kp: \.viewMode,    lo: 0.0,   hi: 3.0,   step: 1.0,   group: "Research",
+         info: "Dye art, or the fluid's vorticity / enstrophy / divergence fields.",
          options: ["dye art", "vorticity ω", "enstrophy ω²", "divergence"]),
-    Knob(name: "vortScale",   kp: \.vortScale,   lo: 0.5,   hi: 20.0,  step: 0.5,   group: "Research"),
-    // ── Time ── (MUST stay last: captures + path journals serialize params by
-    // knob index, so new knobs are append-only to keep old .fluo files valid)
-    Knob(name: "simSpeed",    kp: \.simSpeed,    lo: 0.0,   hi: 4.0,   step: 0.05,  group: "Time"),
+    Knob(name: "vortScale",   kp: \.vortScale,   lo: 0.5,   hi: 20.0,  step: 0.5,   group: "Research",
+         info: "Display gain for the vorticity / enstrophy / divergence views."),
+    // (MUST stay last: captures + path journals serialize params by knob index,
+    // so new knobs are append-only to keep old .fluo files valid)
+    Knob(name: "simSpeed",    kp: \.simSpeed,    lo: 0.0,   hi: 4.0,   step: 0.05,  group: "Time",
+         info: "Sim steps per rendered frame: 0 pauses, <1 slow motion, >1 fast-forward."),
 ]

@@ -17,6 +17,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     var onDiagnostics: ((Diag) -> Void)?       // diagnostics sink (set by AppDelegate)
     var onSpectrum: (([Float], Int) -> Void)?  // energy spectrum E(k) + avg frame count
     var onCaptureStatus: ((String) -> Void)?   // capture/restore/path status → on-screen slot label
+    var onReplayTick: (() -> Void)?            // fired each frame while a path replay drives params (panel refresh)
     private let spectrum = Spectrum(n: 1024)   // == fieldDim: full-res, no aliasing
     private var hudFrame = 0
     private var simAcc: Float = 0   // fractional sim-step accumulator (simSpeed)
@@ -124,12 +125,17 @@ final class Renderer: NSObject, MTKViewDelegate {
         let files = Captures.list("creatures", "fluo")
         guard !files.isEmpty else { print("no creatures captured yet (press c)"); onCaptureStatus?("no creatures yet — press c"); return }
         creatureLoadIdx = (creatureLoadIdx + 1) % files.count
-        guard let data = try? Data(contentsOf: files[creatureLoadIdx]) else { return }
+        let name = files[creatureLoadIdx].deletingPathExtension().lastPathComponent
+        guard let data = try? Data(contentsOf: files[creatureLoadIdx]) else {
+            onCaptureStatus?("✗ \(name) — unreadable file"); return
+        }
         if sim.applyState(data, params) {
             spectrum.resetAverage()
-            let name = files[creatureLoadIdx].deletingPathExtension().lastPathComponent
             print("↩︎ restored \(files[creatureLoadIdx].lastPathComponent)")
             onCaptureStatus?("◆ \(name)   (\(creatureLoadIdx + 1)/\(files.count) — loaded)")
+        } else {
+            // applyState printed why (bad magic / dims mismatch) — surface it on screen too
+            onCaptureStatus?("✗ \(name) — incompatible capture (grid/agent count changed)")
         }
     }
     func recordPathToggle() {                                  // j — start/stop recording
@@ -147,8 +153,12 @@ final class Renderer: NSObject, MTKViewDelegate {
         guard let url = Captures.list("paths", "fluopath").last else { print("no paths recorded yet (press j)"); onCaptureStatus?("no paths yet — press j"); return }
         syncGPU()
         if let start = journal.beginReplay(url) {
-            sim.applyState(start, params); spectrum.resetAverage()
-            onCaptureStatus?("▶ replaying \(url.deletingPathExtension().lastPathComponent)")
+            if sim.applyState(start, params) {
+                spectrum.resetAverage()
+                onCaptureStatus?("▶ replaying \(url.deletingPathExtension().lastPathComponent)")
+            } else {
+                onCaptureStatus?("✗ path start-state incompatible (grid/agent count changed)")
+            }
         }
     }
 
@@ -192,9 +202,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         // path capture/replay: apply this frame's scheduled param changes (replay) and
         // record any manual changes (record). No-ops unless one mode is active.
         journal.tickReplay { i, v in self.params[keyPath: engineKnobs[i].kp] = v }
+        if journal.replaying { onReplayTick?() }   // sliders track the replayed params
         journal.tickRecord { engineKnobs.map { self.params[keyPath: $0.kp] } }
-
-        sim.stepEcology()   // replicator-mutator reallocation (no-op unless ecology mode is on)
 
         // research-viz HUD: compute diagnostics a few times a second from the
         // last completed frame's fields (before this frame's encode touches them)
@@ -209,9 +218,15 @@ final class Renderer: NSObject, MTKViewDelegate {
 
         // simSpeed: accumulate fractional steps — ≥1 runs that many sim steps per
         // frame (capped), <1 steps only on some frames (slow-mo), 0 pauses.
+        // Ecology ticks once per EXECUTED sim step (it's part of the dynamics:
+        // it pauses with simSpeed 0 and slows down in slow motion).
         simAcc += params.simSpeed
         var steps = 0
-        while simAcc >= 1, steps < 8 { sim.encode(into: cmd); simAcc -= 1; steps += 1 }
+        while simAcc >= 1, steps < 8 {
+            sim.stepEcology()           // replicator-mutator reallocation (no-op unless ecology mode is on)
+            sim.encode(into: cmd)
+            simAcc -= 1; steps += 1
+        }
         if steps == 8 { simAcc = 0 }   // don't bank a backlog the GPU can't pay down
         sim.encodeViz(into: cmd)       // ω/div views refresh every frame, even paused
 

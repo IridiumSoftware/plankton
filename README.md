@@ -66,7 +66,11 @@ swift run plankton --3dspec      # 3D engine spectrum      → data/3dspec_manif
 ## 2D engine
 
 An agent-driven incompressible 2D fluid rendered as a colored dye field with the
-agents overlaid. A live, grouped slider panel (top-left) tunes everything.
+agents overlaid. All tuning lives in a **control sidebar** on the left (same in
+3D) so the knobs never cover the canvas: sliders grouped under Agents / Fluid /
+Dye / Display / Mouse / Research / Time, each with a **plain-language
+description** — hover any knob and the strip at the bottom of the sidebar
+explains what it does.
 
 - **Mouse drag** — stir the fluid and inject dye.
 - **Right-click** — adopt + mutate the cohort under the cursor (directed
@@ -82,7 +86,8 @@ agents overlaid. A live, grouped slider panel (top-left) tunes everything.
   **divergence** field. With the **E / Z / |ω|ₘₐₓ / div** HUD and a scrolling
   **E/Z time-series plot** (the research-viz layer; ties to the
   `navier-stokes` program — ω is exactly that 2D solver's state variable).
-- Every slider has **−/+ steppers** for one-step fine-tuning.
+- Every slider has **−/+ steppers** for one-step fine-tuning, a tooltip, and a
+  hover description in the sidebar footer.
 
 ## Faithful fluid
 
@@ -158,14 +163,17 @@ stop. Verify the encoders headlessly with `--rectest`.
 
 ## 3D engine (`--3d`)
 
-The whole model promoted to 3D, the owner's `3dMC` idea realized: a 160³
+The whole model promoted to 3D, the owner's `3dMC` idea realized: a 192³
 incompressible fluid (6-neighbour Hodge projection) forced by agents whose
 **Monte-Carlo tangent-plane brain** samples random planes containing their
 velocity, runs the 2D symmetric brain per plane, and integrates the steering into
 3D. The faithful-fluid retrofit applies here too (ν∇² viscosity, net-zero
 dipole forcing), and chemotaxis senses the full **3D dye gradient** — crank
 the `cohesion` knob to grow volumetric creatures. Rendered as a
-**ray-marched volume** of the agents' dye density.
+**ray-marched volume** of the agents' dye density (marched at half resolution
+with an exact empty-space skip, then upsampled — the agent points and UI stay
+sharp; ~60 fps at full quality on an M5 Max). The `jacobiIters` knob is the
+honest quality-vs-speed dial for the pressure projection.
 
 - **Drag** to orbit · **scroll** to zoom.
 - **Right-click** — adopt + mutate the cohort under the click ray (directed

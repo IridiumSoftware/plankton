@@ -15,8 +15,9 @@ func runSim3DTest() {
     catch { fatalError("MSL3D compile FAILED: \(error)") }
     print("MSL3D        : compiled OK")
 
-    let dim = (ProcessInfo.processInfo.environment["NS_DIM"]).flatMap { Int($0) } ?? 64   // NS_DIM to bench at the live 160³
-    let sim = Sim3D(device: device, library: lib, count: dim * dim, fieldDim: dim)
+    let dim = (ProcessInfo.processInfo.environment["NS_DIM"]).flatMap { Int($0) } ?? 64       // NS_DIM to bench at the live grid
+    let agents = (ProcessInfo.processInfo.environment["NS_AGENTS"]).flatMap { Int($0) } ?? dim * dim   // NS_AGENTS=1048576 for the live load
+    let sim = Sim3D(device: device, library: lib, count: agents, fieldDim: dim)
     guard let q = device.makeCommandQueue() else { fatalError("no queue") }
     let t0 = Date()
     for _ in 0..<60 {

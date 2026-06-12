@@ -9,20 +9,34 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     let sim: Sim3D                              // internal: the 3D panel tunes it
     private let volumePipe: MTLRenderPipelineState
     private let pointPipe: MTLRenderPipelineState
+    private let upsamplePipe: MTLRenderPipelineState
+    private let occPipe: MTLComputePipelineState   // per-block max-dye grid for empty-space skipping
+    private let occBuffer: MTLBuffer
+    private let occDim: SIMD3<UInt32>
+    private let device: MTLDevice
+    // half-resolution offscreen target for the ray-march (the per-pixel hog):
+    // 4× fewer rays, then bilinear-upsampled; points + UI stay full-res
+    private var volTex: MTLTexture?
     let camera = Camera3D()
-    var densityScale: Float = 0.006
+    var densityScale: Float = 0.010 // 192³ spreads the same dye over ~1.7× the cells of the old 160³ — exposure raised to match
     var sharpness: Float = 1.5      // ray-march transfer gamma — >1 cuts faint halo, crisper edges
     var colorMode: Float = 0                    // 0 density, 1 flow dir, 2 speed, 3 vorticity (fluid-only)
     var pointAlpha: Float = 0.0     // cohort-tinted agent overlay (0 = off; raise to see species when breeding)
     var vortScale: Float = 30       // |ω| → opacity scale for the fluid-only vorticity view
     // capture (set by App3D, which owns the knob list)
     var onCaptureStatus: ((String) -> Void)?
+    var onReplayTick: (() -> Void)?            // fired each frame while a path replay drives params (panel refresh)
     var paramRead: () -> [Float] = { [] }
     var paramWrite: (Int, Float) -> Void = { _, _ in }
     private let journal = PathJournal()
     private var creatureLoadIdx = -1
     private var simAcc: Float = 0   // fractional sim-step accumulator (simSpeed)
     private var lastCommand: MTLCommandBuffer?   // for GPU sync before CPU reads/writes
+    // PLANKTON_AUTOPERF: print the average GPU ms/frame (sim + render in one command
+    // buffer) every 240 frames — the honest live cost, measured on the GPU timeline.
+    private let perfEnabled = ProcessInfo.processInfo.environment["PLANKTON_AUTOPERF"] != nil
+    private var perfSumMs = 0.0
+    private var perfN = 0
 
     // Block until the in-flight frame's GPU work is done, so capture/breed/restore
     // read/write the shared buffers consistently (they're triggered off the render
@@ -31,18 +45,33 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     private func syncGPU() { lastCommand?.waitUntilCompleted() }
 
     init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
+        self.device = device
         queue = device.makeCommandQueue()!
         recorder = Recorder(device: device)
         let lib: MTLLibrary
         do { lib = try device.makeLibrary(source: Shaders3D.source, options: nil) }
         catch { fatalError("MSL3D compile failed: \(error)") }
-        sim = Sim3D(device: device, library: lib, fieldDim: 160)   // 160³ (was 128³) — finer dye structures
+        sim = Sim3D(device: device, library: lib, fieldDim: 192)   // 192³ (was 160³) — finer dye structures
+
+        // occupancy grid: ceil(dim/6)³ block maxima, recomputed each frame and
+        // read by the ray-march to skip empty space (see occupancy3d in Shaders3D)
+        let ob = (Int(sim.dim.x) + 5) / 6
+        occDim = SIMD3<UInt32>(UInt32(ob), UInt32(ob), UInt32(ob))
+        occBuffer = device.makeBuffer(length: ob * ob * ob * 4, options: .storageModePrivate)!
+        occPipe = try! device.makeComputePipelineState(function: lib.makeFunction(name: "occupancy3d")!)
 
         let d = MTLRenderPipelineDescriptor()
         d.vertexFunction = lib.makeFunction(name: "raymarch_vertex")
         d.fragmentFunction = lib.makeFunction(name: "raymarch_fragment")
         d.colorAttachments[0].pixelFormat = pixelFormat
         volumePipe = try! device.makeRenderPipelineState(descriptor: d)
+
+        // bilinear upsample of the half-res volume into the drawable
+        let ud = MTLRenderPipelineDescriptor()
+        ud.vertexFunction = lib.makeFunction(name: "raymarch_vertex")
+        ud.fragmentFunction = lib.makeFunction(name: "upsample_fragment")
+        ud.colorAttachments[0].pixelFormat = pixelFormat
+        upsamplePipe = try! device.makeRenderPipelineState(descriptor: ud)
 
         // cohort-tinted agent points, additive over the volume
         let pd = MTLRenderPipelineDescriptor()
@@ -121,9 +150,16 @@ final class Renderer3D: NSObject, MTKViewDelegate {
         let files = Captures.list("creatures3d", "fluo3")
         guard !files.isEmpty else { onCaptureStatus?("no creatures yet — press c"); return }
         creatureLoadIdx = (creatureLoadIdx + 1) % files.count
-        guard let data = try? Data(contentsOf: files[creatureLoadIdx]), let p = sim.applyState(data) else { return }
+        let name = files[creatureLoadIdx].deletingPathExtension().lastPathComponent
+        guard let data = try? Data(contentsOf: files[creatureLoadIdx]) else {
+            onCaptureStatus?("✗ \(name) — unreadable file"); return
+        }
+        guard let p = sim.applyState(data) else {
+            // applyState printed why (bad magic / dims mismatch) — surface it on screen too
+            onCaptureStatus?("✗ \(name) — incompatible capture (grid/agent count changed)"); return
+        }
         for (i, v) in p.enumerated() { paramWrite(i, v) }
-        onCaptureStatus?("◆ \(files[creatureLoadIdx].deletingPathExtension().lastPathComponent)   (\(creatureLoadIdx + 1)/\(files.count) — loaded)")
+        onCaptureStatus?("◆ \(name)   (\(creatureLoadIdx + 1)/\(files.count) — loaded)")
     }
     func recordPathToggle() {                                  // j
         if journal.recording {
@@ -138,7 +174,10 @@ final class Renderer3D: NSObject, MTKViewDelegate {
     func replayLastPath() {                                    // k
         guard let url = Captures.list("paths3d", "fluo3path").last else { onCaptureStatus?("no paths yet — press j"); return }
         syncGPU()
-        if let start = journal.beginReplay(url), let p = sim.applyState(start) {
+        if let start = journal.beginReplay(url) {
+            guard let p = sim.applyState(start) else {
+                onCaptureStatus?("✗ path start-state incompatible (grid/agent count changed)"); return
+            }
             for (i, v) in p.enumerated() { paramWrite(i, v) }
             onCaptureStatus?("▶ replaying \(url.deletingPathExtension().lastPathComponent)")
         }
@@ -154,35 +193,83 @@ final class Renderer3D: NSObject, MTKViewDelegate {
               let cmd = queue.makeCommandBuffer() else { return }
 
         journal.tickReplay(paramWrite)   // applies scheduled param changes (no-op unless replaying)
+        if journal.replaying { onReplayTick?() }   // sliders track the replayed params
         journal.tickRecord(paramRead)    // records param deltas (no-op unless recording)
-
-        sim.stepEcology()   // replicator-mutator reallocation (no-op unless ecology mode is on)
 
         // simSpeed: accumulate fractional steps — ≥1 runs that many sim steps per
         // frame (capped), <1 steps only on some frames (slow-mo), 0 pauses.
+        // Ecology ticks once per EXECUTED sim step (it's part of the dynamics:
+        // it pauses with simSpeed 0 and slows down in slow motion).
         simAcc += sim.simSpeed
         var steps = 0
-        while simAcc >= 1, steps < 8 { sim.encode(into: cmd); simAcc -= 1; steps += 1 }
+        while simAcc >= 1, steps < 8 {
+            sim.stepEcology()           // replicator-mutator reallocation (no-op unless ecology mode is on)
+            sim.encode(into: cmd)
+            simAcc -= 1; steps += 1
+        }
         if steps == 8 { simAcc = 0 }   // don't bank a backlog the GPU can't pay down
 
-        rpd.colorAttachments[0].loadAction = .clear
-        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.02, green: 0.02, blue: 0.05, alpha: 1)
-        guard let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
-        enc.setRenderPipelineState(volumePipe)
-        enc.setFragmentBuffer(sim.dye, offset: 0, index: 0)
         var dim = sim.dim
-        enc.setFragmentBytes(&dim, length: 16, index: 1)
+        var odv = occDim
+        // refresh the occupancy grid from the CURRENT dye (every frame, ~0.15 ms:
+        // stays correct when paused, after restores, at any simSpeed)
+        if let oe = cmd.makeComputeCommandEncoder() {
+            oe.setComputePipelineState(occPipe)
+            oe.setBuffer(sim.dye, offset: 0, index: 0)
+            oe.setBuffer(occBuffer, offset: 0, index: 1)
+            oe.setBytes(&dim, length: 16, index: 2)
+            oe.setBytes(&odv, length: 16, index: 3)
+            oe.dispatchThreads(MTLSize(width: Int(occDim.x), height: Int(occDim.y), depth: Int(occDim.z)),
+                               threadsPerThreadgroup: MTLSize(width: 4, height: 4, depth: 4))
+            oe.endEncoding()
+        }
+
+        // (re)size the half-res volume target to the current drawable
+        let volW = max(Int(view.drawableSize.width) / 2, 64)
+        let volH = max(Int(view.drawableSize.height) / 2, 64)
+        if volTex == nil || volTex!.width != volW || volTex!.height != volH {
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: view.colorPixelFormat,
+                                                              width: volW, height: volH, mipmapped: false)
+            td.usage = [.renderTarget, .shaderRead]
+            td.storageMode = .private
+            volTex = device.makeTexture(descriptor: td)
+        }
+        guard let volTex else { return }
+
+        // ── pass 1: ray-march the volume at half resolution ──
+        let vrpd = MTLRenderPassDescriptor()
+        vrpd.colorAttachments[0].texture = volTex
+        vrpd.colorAttachments[0].loadAction = .dontCare   // every pixel is written
+        vrpd.colorAttachments[0].storeAction = .store
+        guard let venc = cmd.makeRenderCommandEncoder(descriptor: vrpd) else { return }
+        venc.setRenderPipelineState(volumePipe)
+        venc.setFragmentBuffer(sim.dye, offset: 0, index: 0)
+        venc.setFragmentBytes(&dim, length: 16, index: 1)
         var invVP = camera.invViewProj()
-        enc.setFragmentBytes(&invVP, length: MemoryLayout<float4x4>.stride, index: 2)
+        venc.setFragmentBytes(&invVP, length: MemoryLayout<float4x4>.stride, index: 2)
         var ds = densityScale
-        enc.setFragmentBytes(&ds, length: 4, index: 3)
-        enc.setFragmentBuffer(sim.vel, offset: 0, index: 4)
+        venc.setFragmentBytes(&ds, length: 4, index: 3)
+        venc.setFragmentBuffer(sim.vel, offset: 0, index: 4)
         var cm = colorMode
-        enc.setFragmentBytes(&cm, length: 4, index: 5)
+        venc.setFragmentBytes(&cm, length: 4, index: 5)
         var sh = sharpness
-        enc.setFragmentBytes(&sh, length: 4, index: 6)
+        venc.setFragmentBytes(&sh, length: 4, index: 6)
         var vs = vortScale
-        enc.setFragmentBytes(&vs, length: 4, index: 7)
+        venc.setFragmentBytes(&vs, length: 4, index: 7)
+        venc.setFragmentBuffer(occBuffer, offset: 0, index: 8)
+        venc.setFragmentBytes(&odv, length: 16, index: 9)
+        // the dye level below which a sample can't clear the march's 0.002 alpha
+        // floor: pow(v·ds, sharp) ≤ 0.002 ⇔ v ≤ 0.002^(1/sharp)/ds (gate threshold)
+        var skipDye = Float(pow(0.002, 1.0 / Double(max(sharpness, 0.1))) / Double(max(densityScale, 1e-6)))
+        venc.setFragmentBytes(&skipDye, length: 4, index: 10)
+        venc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        venc.endEncoding()
+
+        // ── pass 2: upsample into the drawable + full-res cohort points ──
+        rpd.colorAttachments[0].loadAction = .dontCare    // upsample writes every pixel
+        guard let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
+        enc.setRenderPipelineState(upsamplePipe)
+        enc.setFragmentTexture(volTex, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         // cohort-tinted agent overlay (species identity for breeding)
@@ -202,6 +289,18 @@ final class Renderer3D: NSObject, MTKViewDelegate {
 
         recorder.grab(drawable: drawable, commandBuffer: cmd)   // no-op unless recording
         cmd.present(drawable)
+        if perfEnabled {
+            cmd.addCompletedHandler { c in
+                let ms = (c.gpuEndTime - c.gpuStartTime) * 1000
+                DispatchQueue.main.async {
+                    self.perfSumMs += ms; self.perfN += 1
+                    if self.perfN % 240 == 0 {
+                        print(String(format: "GPU %.2f ms/frame (avg of %d, %d³)",
+                                     self.perfSumMs / Double(self.perfN), self.perfN, Int(self.sim.dim.x)))
+                    }
+                }
+            }
+        }
         cmd.commit()
         lastCommand = cmd   // capture/breed wait on this before touching shared buffers
     }

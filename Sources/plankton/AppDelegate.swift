@@ -1,14 +1,16 @@
 import AppKit
 import MetalKit
 
-// Owns the window, the Metal view, the on-screen slider panel, and the
-// (secondary) keyboard tuning. Instantiated at top level in main.swift and
-// held for the program's lifetime.
+// Owns the window, the Metal view, the control sidebar, and the (secondary)
+// keyboard tuning. Layout: a fixed-width sidebar on the left (scrollable knob
+// panel + description footer — controls never overlap the rendering) and the
+// square canvas to its right. Instantiated at top level in main.swift.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var mtkView: EngineView!
     private var renderer: Renderer!
-    private var controls: ControlsPanel!
+    private var controls: KnobPanel!
+    private var sidebar: Sidebar!
     private var hud: NSTextField!
     private var plot: PlotView!
     private var spectrum: SpectrumView!
@@ -24,11 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fatalError("No Metal device available.")
         }
 
-        let frame = NSRect(x: 0, y: 0, width: 1024, height: 1024)
+        let canvas: CGFloat = 1024, sideW = Sidebar.width
+        let frame = NSRect(x: 0, y: 0, width: sideW + canvas, height: canvas)
         let container = NSView(frame: frame)
         container.autoresizesSubviews = true
 
-        mtkView = EngineView(frame: frame, device: device)
+        mtkView = EngineView(frame: NSRect(x: sideW, y: 0, width: canvas, height: canvas), device: device)
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.preferredFramesPerSecond = 60
         mtkView.framebufferOnly = false        // lets the recorder blit the drawable
@@ -56,24 +59,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mtkView.delegate = renderer
         container.addSubview(mtkView)
 
-        // slider panel, pinned top-left
-        controls = ControlsPanel(params: params, knobs: engineKnobs)
-        controls.setFrameOrigin(NSPoint(x: 12, y: frame.height - controls.frame.height - 12))
-        controls.autoresizingMask = [.maxXMargin, .minYMargin]
-        container.addSubview(controls)
-
-        controls.onReset  = { [weak self] in self?.renderer?.reset() }
-        controls.onReroll = { [weak self] in self?.renderer?.reroll() }
-        controls.onSave   = { [weak self] in self?.savePreset() }
-        controls.onLoad   = { [weak self] in self?.loadNextPreset() }
-        controls.onToggleDiag = { [weak self] on in
-            guard let self else { return }
-            self.params.diagnosticsOn = on
-            self.hud.isHidden = !on
-            self.plot.isHidden = !on
-            self.spectrum.isHidden = !on
+        // control sidebar (left): scrollable knob panel + description footer.
+        // UIKnobs bind the shared engineKnobs (the serialization order) by keypath.
+        let uiKnobs: [UIKnob] = engineKnobs.map { k in
+            UIKnob(name: k.name, info: k.info,
+                   get: { [params] in params[keyPath: k.kp] },
+                   set: { [params] in params[keyPath: k.kp] = $0 },
+                   lo: k.lo, hi: k.hi, step: k.step, group: k.group, options: k.options)
         }
-        controls.onResetAvg = { [weak self] in self?.renderer?.resetSpectrumAvg() }
+        controls = KnobPanel(
+            knobs: uiKnobs,
+            buttons: [
+                ("Save",  "Save current params + brains as a preset (presets/*.json)", { [weak self] in self?.savePreset() }),
+                ("Load",  "Load the next saved preset (cycles)",                       { [weak self] in self?.loadNextPreset() }),
+                ("Reset", "Clear the fields and re-seed the agents (params kept)",     { [weak self] in self?.renderer?.reset(); self?.controls.refresh() }),
+                ("Brain", "Re-roll all 8 cohort brains (same as the r key)",           { [weak self] in self?.renderer?.reroll() }),
+                ("Avg",   "Restart the E(k) spectrum time-average",                    { [weak self] in self?.renderer?.resetSpectrumAvg() }),
+            ],
+            toggle: ("Diag", "Research overlays: HUD + E/Z plot + spectrum (off = max perf)", true, { [weak self] on in
+                guard let self else { return }
+                self.params.diagnosticsOn = on
+                self.hud.isHidden = !on
+                self.plot.isHidden = !on
+                self.spectrum.isHidden = !on
+            })
+        )
+        controls.onAnyChange = { [weak self] in self?.renderer?.resetSpectrumAvg() }   // param change alters the flow → restart the average
+        sidebar = Sidebar(panel: controls, height: frame.height)
+        sidebar.autoresizingMask = [.height]
+        container.addSubview(sidebar)
 
         // research HUD (top-right): live E / Z / |ω|max / div readout
         hud = NSTextField(frame: NSRect(x: frame.width - 392, y: frame.height - 34, width: 380, height: 22))
@@ -103,8 +117,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                            Double(d.e), Double(d.z), Double(d.maxW), Double(d.div))
             self?.plot.push(d.e, d.z)
         }
+        // path replay drives params from the journal — keep the sliders live
+        renderer.onReplayTick = { [weak self] in self?.controls.refresh() }
 
-        // keyboard-help button (bottom-left; expands upward)
+        // keyboard-help button (bottom-left of the canvas; expands upward)
         help = HelpView(text: """
         drag         stir fluid + inject dye
         right-click  adopt + mutate cohort (breed)
@@ -116,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         [ ] / - =    keyboard tuning (sliders are primary)
         space        print all params
         """)
-        help.setFrameOrigin(NSPoint(x: 12, y: 12))
+        help.setFrameOrigin(NSPoint(x: sideW + 12, y: 12))
         help.autoresizingMask = [.maxXMargin, .maxYMargin]
         container.addSubview(help)
 
@@ -129,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureLabel.textColor = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.4, alpha: 1)  // amber (≠ cyan HUD)
         captureLabel.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
         captureLabel.alignment = .right
-        captureLabel.stringValue = "capture: press c to save · x to load"
+        captureLabel.stringValue = "capture: c save · x load · j/k path"
         captureLabel.autoresizingMask = [.minXMargin, .maxYMargin]
         container.addSubview(captureLabel)
         renderer.onCaptureStatus = { [weak self] s in self?.captureLabel.stringValue = s }
@@ -140,19 +156,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                           defer: false)
         window.title = "plankton"
         window.contentView = container
+        window.minSize = NSSize(width: sideW + 560, height: 640)
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(mtkView)   // keyboard tuning (secondary)
 
-        // Smoke hook for the live record path (no keystrokes needed): with
-        // PLANKTON_AUTOREC set, record ~2.4 s of mp4 then quit. Lets the GUI
-        // blit→encode path be verified non-interactively. Harmless when unset.
         // Smoke hook for the live ecology render path: turn ecology on, run, quit.
         if ProcessInfo.processInfo.environment["PLANKTON_AUTOECO"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.renderer?.cycleEcology() }   // → rps
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { NSApp.terminate(nil) }
         }
-
+        // Smoke hook for the live record path (no keystrokes needed): with
+        // PLANKTON_AUTOREC set, record ~2.4 s of mp4 then quit. Harmless when unset.
         if let mode = ProcessInfo.processInfo.environment["PLANKTON_AUTOREC"] {
             let gif = (mode == "gif")
             let go: () -> Void = { if gif { self.renderer?.toggleGIF(size: self.mtkView.drawableSize) }

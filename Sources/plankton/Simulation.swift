@@ -347,8 +347,11 @@ final class Simulation {
     }
 
     // Clear all fields and re-seed the particles (fresh canvas, same params/brain).
+    // dyeBlur/vort/divDisp are display-derived but must clear too: paused at
+    // simSpeed 0 nothing recomputes them, so a stale bloom/ω ghost would persist.
     func reset() {
-        for b in [vel, velTmp, pressure, pressureTmp, divg, dye, dyeTmp] {
+        for b in [vel, velTmp, pressure, pressureTmp, divg, dye, dyeTmp,
+                  dyeBlur, blurTmp, vort, divDisp] {
             memset(b.contents(), 0, b.length)
         }
         var particles = Simulation.seedParticles(count: particleCount)
@@ -443,6 +446,7 @@ final class Simulation {
                 var coh = Simulation.partitionCohorts(count: particleCount)   // v1: rebuild the partition
                 memcpy(cohortBuffer.contents(), &coh, particleCount * 4)
             }
+            recountCohorts()   // keep ecology's tracked counts in sync with the restored membership
             let np = Int(i32())
             for (idx, k) in engineKnobs.enumerated() where idx < np {
                 params[keyPath: k.kp] = raw.loadUnaligned(fromByteOffset: off, as: Float.self); off += 4

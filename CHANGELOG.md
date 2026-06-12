@@ -6,6 +6,52 @@ All notable changes to **plankton** are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Knob descriptions everywhere** — every knob in both engines now carries a
+  plain-language one-liner, shown as a tooltip and in an always-visible
+  description strip at the bottom of the sidebar (hover any row).
+- **`jacobiIters` knob (3D)** — the pressure-solve iteration count (default 25)
+  is now a visible quality-vs-speed dial instead of a hidden constant.
+- `PLANKTON_AUTOPERF=1` — perf hook: the 3D app prints the average GPU
+  ms/frame (sim + render, measured on the GPU timeline) and quits.
+
+### Changed (UI + 3D performance)
+- **Control sidebar (both engines)** — the floating slider panels (which
+  overlapped the rendering) are gone; controls live in a fixed, scrollable
+  left sidebar with consistent groups (Agents / Fluid / Dye / Display / … /
+  Time) across 2D and 3D. One shared `KnobPanel` implementation replaces the
+  duplicated `ControlsPanel`/`Panel3D`. Knob *array* orders are unchanged, so
+  existing captures, paths, and presets still load.
+- **3D grid 160³ → 192³, and the renderer got fast** — the frame cost was
+  dominated by ray-marching at full retina resolution all along. The volume is
+  now marched at half resolution and bilinearly upsampled (near-lossless for a
+  soft emissive volume; agent points + UI stay full-res), with a per-block
+  occupancy gate (exact — skips only samples that could not have contributed),
+  chord-scaled step counts, cheaper periodic-wrap indexing in the stencil
+  kernels, and 32-wide threadgroups. Measured on an M5 Max at 192³ with 2²⁰
+  agents: **74.3 → ~15.7 ms/frame** GPU steady-state (≈60 fps at full
+  quality); sim-only step 21.9 → 19.8 ms (synchronous bench). `densityScale`
+  default raised 0.006 → 0.010 (same dye spread over ~1.7× the cells).
+- 3D capture/path files recorded at the old 160³ grid no longer load (grid
+  mismatch) — the failure now shows on the status label instead of being
+  silent. 2D captures are unaffected.
+
+### Fixed
+- **Ecology ran while paused** — the replicator now ticks once per *executed*
+  sim step in both engines, so it pauses at `simSpeed 0` and slows down in
+  slow motion instead of evolving a frozen world.
+- **Reset left a ghost** — 2D `reset()` now also clears the bloom, vorticity,
+  and divergence buffers; previously a paused reset kept the old dye's glow on
+  screen indefinitely.
+- **2D capture restore desynced ecology** — restoring a creature now recounts
+  the per-agent cohort tallies (the 3D engine already did; the 2D reallocation
+  could drift until the periodic recount).
+- **Silent failures** — restoring an unreadable/incompatible capture, or
+  replaying a path whose start-state no longer matches the engine, now reports
+  on the status label instead of doing nothing.
+- **Stale sliders during path replay** — the panel now refreshes while a
+  replay drives the parameters.
+
+### Added (earlier this cycle)
 - **Morphology atlas** (`--morphology`) — maps the dye-structure regimes
   (foam / network / spots / dispersed) across cohesion × dyeDecay, classifying
   each cell by contrast + Euler characteristic + largest-connected-component

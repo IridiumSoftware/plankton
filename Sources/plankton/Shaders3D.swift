@@ -26,6 +26,16 @@ enum Shaders3D {
     static inline float3 vat(device const float *v, int x, int y, int z, uint3 d) {
         uint i = idx3(x, y, z, d); return float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
     }
+    // ±1-step periodic wrap for STENCIL kernels only (arg is at most one step
+    // outside [0,n)): compare-select instead of the general double-modulo —
+    // integer div/mod per neighbor read is the hot ALU cost in the 25× Jacobi.
+    static inline int wrn(int a, int n) { return a < 0 ? n - 1 : (a >= n ? 0 : a); }
+    static inline uint nidx3(int x, int y, int z, uint3 d) {
+        return (uint(wrn(z, int(d.z))) * d.y + uint(wrn(y, int(d.y)))) * d.x + uint(wrn(x, int(d.x)));
+    }
+    static inline float3 vatn(device const float *v, int x, int y, int z, uint3 d) {
+        uint i = nidx3(x, y, z, d); return float3(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+    }
     static inline float3 sampleVel3(device const float *v, float3 p, uint3 d) {
         float3 fl = floor(p); int x0 = int(fl.x), y0 = int(fl.y), z0 = int(fl.z);
         float3 t = p - fl;
@@ -72,9 +82,9 @@ enum Shaders3D {
         int x = int(gid.x), y = int(gid.y), z = int(gid.z);
         uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
         float3 c = float3(vin[3*i], vin[3*i+1], vin[3*i+2]);
-        float3 lap = vat(vin, x-1,y,z, d) + vat(vin, x+1,y,z, d)
-                   + vat(vin, x,y-1,z, d) + vat(vin, x,y+1,z, d)
-                   + vat(vin, x,y,z-1, d) + vat(vin, x,y,z+1, d) - 6.0 * c;
+        float3 lap = vatn(vin, x-1,y,z, d) + vatn(vin, x+1,y,z, d)
+                   + vatn(vin, x,y-1,z, d) + vatn(vin, x,y+1,z, d)
+                   + vatn(vin, x,y,z-1, d) + vatn(vin, x,y,z+1, d) - 6.0 * c;
         float3 o = (c + visc * lap) * velDamp;
         vout[3*i] = o.x; vout[3*i+1] = o.y; vout[3*i+2] = o.z;
     }
@@ -187,9 +197,9 @@ enum Shaders3D {
                              constant uint3 &d [[buffer(2)]], uint3 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
         int x = int(gid.x), y = int(gid.y), z = int(gid.z);
-        float dx = vat(v, x + 1, y, z, d).x - vat(v, x - 1, y, z, d).x;
-        float dy = vat(v, x, y + 1, z, d).y - vat(v, x, y - 1, z, d).y;
-        float dz = vat(v, x, y, z + 1, d).z - vat(v, x, y, z - 1, d).z;
+        float dx = vatn(v, x + 1, y, z, d).x - vatn(v, x - 1, y, z, d).x;
+        float dy = vatn(v, x, y + 1, z, d).y - vatn(v, x, y - 1, z, d).y;
+        float dz = vatn(v, x, y, z + 1, d).z - vatn(v, x, y, z - 1, d).z;
         divg[(gid.z * d.y + gid.y) * d.x + gid.x] = 0.5 * (dx + dy + dz);
     }
 
@@ -199,9 +209,9 @@ enum Shaders3D {
                          uint3 gid [[thread_position_in_grid]]) {
         if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
         int x = int(gid.x), y = int(gid.y), z = int(gid.z);
-        float s = pin[idx3(x - 1, y, z, d)] + pin[idx3(x + 1, y, z, d)]
-                + pin[idx3(x, y - 1, z, d)] + pin[idx3(x, y + 1, z, d)]
-                + pin[idx3(x, y, z - 1, d)] + pin[idx3(x, y, z + 1, d)];
+        float s = pin[nidx3(x - 1, y, z, d)] + pin[nidx3(x + 1, y, z, d)]
+                + pin[nidx3(x, y - 1, z, d)] + pin[nidx3(x, y + 1, z, d)]
+                + pin[nidx3(x, y, z - 1, d)] + pin[nidx3(x, y, z + 1, d)];
         uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
         pout[i] = (s - divg[i]) / 6.0;
     }
@@ -212,9 +222,9 @@ enum Shaders3D {
         if (gid.x >= d.x || gid.y >= d.y || gid.z >= d.z) return;
         int x = int(gid.x), y = int(gid.y), z = int(gid.z);
         uint i = (gid.z * d.y + gid.y) * d.x + gid.x;
-        v[3 * i]     -= 0.5 * (p[idx3(x + 1, y, z, d)] - p[idx3(x - 1, y, z, d)]);
-        v[3 * i + 1] -= 0.5 * (p[idx3(x, y + 1, z, d)] - p[idx3(x, y - 1, z, d)]);
-        v[3 * i + 2] -= 0.5 * (p[idx3(x, y, z + 1, d)] - p[idx3(x, y, z - 1, d)]);
+        v[3 * i]     -= 0.5 * (p[nidx3(x + 1, y, z, d)] - p[nidx3(x - 1, y, z, d)]);
+        v[3 * i + 1] -= 0.5 * (p[nidx3(x, y + 1, z, d)] - p[nidx3(x, y - 1, z, d)]);
+        v[3 * i + 2] -= 0.5 * (p[nidx3(x, y, z + 1, d)] - p[nidx3(x, y, z - 1, d)]);
     }
 
     // 6. agents: Monte-Carlo tangent-plane Fourier brain → steer in 3D + ride.
@@ -320,6 +330,29 @@ enum Shaders3D {
                             (xp.y - xm.y) - (yp.x - ym.x));
     }
 
+    // ── render-side occupancy grid: per 6³-cell block, the max dye over the
+    //    block PLUS a one-cell apron (the trilinear sampler reads ±1, so a
+    //    sample inside this block can never exceed the dilated max — gating on
+    //    it is exact, never a false skip). Recomputed by the renderer each
+    //    frame (~0.15 ms) so it stays fresh even when the sim is paused or a
+    //    capture was just restored. 131 KB at 192³ — lives in cache during the
+    //    march, turning empty-space steps into 1 read instead of 8 + a pow.
+    constant uint OCC_BLOCK = 6;
+    kernel void occupancy3d(device const float *dye [[buffer(0)]],
+                            device float *occ        [[buffer(1)]],
+                            constant uint3 &d        [[buffer(2)]],
+                            constant uint3 &od       [[buffer(3)]],
+                            uint3 gid [[thread_position_in_grid]]) {
+        if (gid.x >= od.x || gid.y >= od.y || gid.z >= od.z) return;
+        int x0 = int(gid.x * OCC_BLOCK), y0 = int(gid.y * OCC_BLOCK), z0 = int(gid.z * OCC_BLOCK);
+        float m = 0.0;
+        for (int z = z0 - 1; z <= z0 + int(OCC_BLOCK); z++)
+        for (int y = y0 - 1; y <= y0 + int(OCC_BLOCK); y++)
+        for (int x = x0 - 1; x <= x0 + int(OCC_BLOCK); x++)
+            m = max(m, dye[idx3(x, y, z, d)]);
+        occ[(gid.z * od.y + gid.y) * od.x + gid.x] = m;
+    }
+
     // ── volumetric ray-march of the dye field (Stage 3) ───────────────────
     struct RMOut { float4 position [[position]]; float2 uv; };
     vertex RMOut raymarch_vertex(uint vid [[vertex_id]]) {
@@ -334,7 +367,10 @@ enum Shaders3D {
                                       device const float *vfield   [[buffer(4)]],
                                       constant float &colorMode    [[buffer(5)]],
                                       constant float &sharpness    [[buffer(6)]],
-                                      constant float &vortScale    [[buffer(7)]]) {
+                                      constant float &vortScale    [[buffer(7)]],
+                                      device const float *occ      [[buffer(8)]],
+                                      constant uint3 &od           [[buffer(9)]],
+                                      constant float &skipDye      [[buffer(10)]]) {
         int cm = int(colorMode + 0.5);
         float3 bg = float3(0.02, 0.02, 0.05);
         float2 ndc = in.uv * 2.0 - 1.0;
@@ -349,14 +385,26 @@ enum Shaders3D {
         float tf = min(min(tmx.x, tmx.y), tmx.z);
         if (tf <= max(tn, 0.0)) return float4(bg, 1.0);
         tn = max(tn, 0.0);
-        const int STEPS = 224;   // ~1 sample/cell across a 160³ volume (was 96 → undersampled/banded)
+        // ~1 sample/cell along the ACTUAL chord through the cube (fixed step
+        // length, variable count) — edge rays with short chords stop early
+        // instead of cramming 256 samples into a sliver. Cap 280 ≈ 0.84/cell
+        // on the rare corner-to-corner diagonal.
+        int STEPS = clamp(int((tf - tn) * float(d.x)), 32, 280);
         float dt = (tf - tn) / float(STEPS);
         float3 acc = float3(0.0); float trans = 1.0;
         for (int i = 0; i < STEPS; i++) {
             float3 pos = ro + (tn + (float(i) + 0.5) * dt) * rd;
+            // empty-space gate (dye modes): if this 6³ block's dilated max dye
+            // can't clear the visible-alpha floor (skipDye = the CPU-inverted
+            // `dens > 0.002` test below), the 8-tap trilinear sample + pow can't
+            // contribute — 1 cached read replaces them. Output is IDENTICAL.
+            if (cm != 3) {
+                uint3 b = min(uint3(clamp(pos, 0.0, 0.9999) * float3(d)) / OCC_BLOCK, od - 1);
+                if (occ[(b.z * od.y + b.y) * od.x + b.x] <= skipDye) continue;
+            }
             // sharpness = transfer-function gamma: >1 crushes the faint trilinear
             // halo around structures and keeps the cores ⇒ crisper boundaries on
-            // zoom (the data is 160³ voxels; this sharpens the MAPPING, not the data)
+            // zoom (the data is 192³ voxels; this sharpens the MAPPING, not the data)
             float dens;
             float3 vortEmit = float3(0.0);
             if (cm == 3) {
@@ -388,6 +436,16 @@ enum Shaders3D {
             }
         }
         return float4(acc + bg * trans, 1.0);
+    }
+
+    // ── upscale composite: the volume is ray-marched into a HALF-resolution
+    //    offscreen target (the march is the per-pixel hog — 4× fewer rays),
+    //    then bilinearly upsampled to the drawable here. A soft emissive volume
+    //    upsamples near-losslessly; the agent points + AppKit UI stay full-res.
+    fragment float4 upsample_fragment(RMOut in [[stage_in]],
+                                      texture2d<float> vol [[texture(0)]]) {
+        constexpr sampler s(filter::linear, address::clamp_to_edge);
+        return float4(vol.sample(s, float2(in.uv.x, 1.0 - in.uv.y)).rgb, 1.0);
     }
     """
 }
